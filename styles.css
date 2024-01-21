@@ -1,0 +1,43 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: black;
+    color: white;
+    margin: 20px;
+}
+
+h1, h2, h3 {
+    color: green;
+}
+
+ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+li {
+    margin-bottom: 8px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    color: blue;
+}
+
+select, input {
+    padding: 5px;
+    margin-bottom: 15px;
+    width: 200px;
+}
+
+button {
+    padding: 10px;
+    background-color: blue;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+    button:hover {
+        background-color: green;
+    }

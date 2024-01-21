@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <title>African Supermarket - Jewelries</title>
+</head>
+<body>
+    <h1>African Supermarket - Jewelries</h1>
+
+    <h2>Necklaces</h2>
+    <ul>
+        {% for necklace in jewelries['necklaces'] %}
+        <li>{{ necklace }}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Bracelets</h2>
+    <ul>
+        {% for bracelet in jewelries['bracelets'] %}
+        <li>{{ bracelet }}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Earrings</h2>
+    <ul>
+        {% for earring in jewelries['earrings'] %}
+        <li>{{ earring }}</li>
+        {% endfor %}
+    </ul>
+
+    <h3>Add New Jewelry</h3>
+    <form id="addJewelryForm">
+        <label for="category">Category:</label>
+        <select name="category" id="category">
+            <option value="necklaces">Necklaces</option>
+            <option value="bracelets">Bracelets</option>
+            <option value="earrings">Earrings</option>
+        </select>
+
+        <label for="jewelry">Jewelry:</label>
+        <input type="text" name="jewelry" id="jewelry" required>
+
+        <button type="button" onclick="addJewelry()">Add Jewelry</button>
+    </form>
+
+    <script>
+        function addJewelry() {
+            var category = document.getElementById('category').value;
+            var jewelry = document.getElementById('jewelry').value;
+
+            fetch('/add_jewelry', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    category: category,
+                    jewelry: jewelry,
+                }),
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+    </script>
+</body>
+</html>
