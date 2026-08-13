@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only values. Real secrets never live in CI configuration.
+  TRADELOOM_ENV: test
+  SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789
+  RATE_LIMIT_ENABLED: "false"
+  EMAIL_ENABLED: "false"
+  STRIPE_ENABLED: "false"
+  # Argon2 at production cost would dominate CI time; the algorithm is unchanged.
+  ARGON2_TIME_COST: "1"
+  ARGON2_MEMORY_COST_KIB: "8192"
+  ARGON2_PARALLELISM: "1"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check backend worker
+
+      - name: Format (black)
+        run: black --check -l 100 backend worker
+
+      - name: Type check (mypy)
+        # Not yet blocking: the codebase is annotated but a clean strict run is still in progress.
+        run: mypy backend/tradeloom
+        continue-on-error: true
+
+      - name: Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+        run: pytest backend/tests -q --cov=tradeloom --cov-report=term-missing:skip-covered
+
+      - name: Migrations apply and downgrade cleanly
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/ci.db
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini downgrade base
+          alembic -c backend/alembic.ini upgrade head
+
+      - name: No model/migration drift
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/ci.db
+        run: alembic -c backend/alembic.ini check
+
+      - name: Demo seed loads
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/seed.db
+          TRADELOOM_ENV: development
+        run: |
+          python -m tradeloom.cli reset --force
+          python -m tradeloom.cli seed --demo --trades 200 --days 120
+
+      - name: OpenAPI schema generates
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/schema.db
+        run: |
+          python - <<'PY'
+          import json
+          from tradeloom.main import create_app
+          schema = create_app().openapi()
+          paths = len(schema["paths"])
+          print(f"OpenAPI: {paths} paths")
+          assert paths > 60, "unexpectedly few endpoints — did a router fail to register?"
+          PY
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/backend.Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

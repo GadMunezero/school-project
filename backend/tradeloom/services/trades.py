@@ -14,6 +14,7 @@ Derived values written on every rebuild:
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from collections.abc import Sequence
 from decimal import Decimal
@@ -202,9 +203,9 @@ class TradeService:
 
     async def _filter_by_local_time(
         self, trades: list[Trade], filters: TradeFilters
-    ) -> list[Trade]:
+    ) -> builtins.list[Trade]:
         timezones = await self._account_timezones({t.account_id for t in trades})
-        kept: list[Trade] = []
+        kept: builtins.list[Trade] = []
         for trade in trades:
             local = ensure_aware(trade.entry_timestamp).astimezone(
                 _zone(timezones.get(trade.account_id, "UTC"))
@@ -280,7 +281,7 @@ class TradeService:
         rating: int | None = None,
         custom_metadata: dict[str, Any] | None = None,
         external_id: str | None = None,
-    ) -> list[Trade]:
+    ) -> builtins.list[Trade]:
         """Apply fills to an account's stream and persist the resulting trades.
 
         Returns every trade the fills touched (continued, closed, or newly opened).
@@ -321,7 +322,7 @@ class TradeService:
 
         result = build_trades(engine_fills, contract_multiplier=multiplier, initial=initial)
 
-        touched: list[Trade] = []
+        touched: builtins.list[Trade] = []
         for aggregate in result.all_trades:
             if initial is not None and aggregate is initial and existing is not None:
                 trade = existing
@@ -371,8 +372,8 @@ class TradeService:
         instrument: Instrument | None,
         fills: list[FillInput],
         import_id: uuid.UUID | None,
-    ) -> list[Order]:
-        orders: list[Order] = []
+    ) -> builtins.list[Order]:
+        orders: builtins.list[Order] = []
         for payload in fills:
             order = Order(
                 organization_id=self.organization_id,
@@ -520,7 +521,7 @@ class TradeService:
     # Public write operations
     # ------------------------------------------------------------------
 
-    async def create(self, payload: TradeCreate) -> list[Trade]:
+    async def create(self, payload: TradeCreate) -> builtins.list[Trade]:
         account = await self._require_account(payload.account_id)
         instrument = await self.instruments.by_symbol(payload.symbol)
 
@@ -563,7 +564,7 @@ class TradeService:
         )
         return trades
 
-    def _fills_from_simple(self, payload: TradeCreate) -> list[FillInput]:
+    def _fills_from_simple(self, payload: TradeCreate) -> builtins.list[FillInput]:
         assert payload.direction and payload.entry_price and payload.quantity
         entry_side = OrderSide.BUY if payload.direction is Direction.LONG else OrderSide.SELL
         fills = [

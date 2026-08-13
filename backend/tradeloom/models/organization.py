@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -17,6 +18,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from tradeloom.core.enums import MemberRole, MemberStatus
 from tradeloom.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from tradeloom.db.types import GUID, EnumType, JSONDict, TZDateTime
+
+if TYPE_CHECKING:  # avoids a circular import at runtime
+    from tradeloom.models.identity import User
 
 
 class Organization(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -68,7 +72,7 @@ class OrganizationMember(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     organization: Mapped[Organization] = relationship(back_populates="members", lazy="joined")
     #: ``foreign_keys`` is required: this table has two FKs to ``users`` (the member and whoever
     #: invited them), so SQLAlchemy cannot infer which one defines the relationship.
-    user: Mapped[User] = relationship(  # noqa: F821
+    user: Mapped[User] = relationship(
         back_populates="memberships", lazy="joined", foreign_keys=[user_id]
     )
 

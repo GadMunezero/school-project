@@ -14,6 +14,7 @@ engine version and a digest of the exact bars consumed.
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from datetime import datetime, time
 from decimal import Decimal
@@ -551,7 +552,7 @@ class BacktestService:
             order_by=[BacktestRun.created_at.desc()],
         )
 
-    async def run_trades(self, run_id: uuid.UUID) -> list[BacktestTrade]:
+    async def run_trades(self, run_id: uuid.UUID) -> builtins.list[BacktestTrade]:
         result = await self.session.execute(
             select(BacktestTrade)
             .where(
@@ -562,7 +563,7 @@ class BacktestService:
         )
         return list(result.scalars().all())
 
-    async def run_equity(self, run_id: uuid.UUID) -> list[EquityPoint]:
+    async def run_equity(self, run_id: uuid.UUID) -> builtins.list[EquityPoint]:
         result = await self.session.execute(
             select(EquityPoint)
             .where(
@@ -573,7 +574,7 @@ class BacktestService:
         )
         return list(result.scalars().all())
 
-    async def run_drawdowns(self, run_id: uuid.UUID) -> list[DrawdownPoint]:
+    async def run_drawdowns(self, run_id: uuid.UUID) -> builtins.list[DrawdownPoint]:
         result = await self.session.execute(
             select(DrawdownPoint)
             .where(
@@ -584,7 +585,7 @@ class BacktestService:
         )
         return list(result.scalars().all())
 
-    async def run_orders(self, run_id: uuid.UUID) -> list[BacktestOrder]:
+    async def run_orders(self, run_id: uuid.UUID) -> builtins.list[BacktestOrder]:
         result = await self.session.execute(
             select(BacktestOrder)
             .where(

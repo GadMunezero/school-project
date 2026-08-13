@@ -15,6 +15,7 @@ Consequences that the tenant-isolation tests assert:
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from collections.abc import Sequence
 from typing import Any, Generic, TypeVar
@@ -57,7 +58,7 @@ class Repository(Generic[ModelT]):
         await self.session.flush()
         return entities
 
-    async def list_all(self, *filters: ColumnElement[bool]) -> list[ModelT]:
+    async def list_all(self, *filters: ColumnElement[bool]) -> builtins.list[ModelT]:
         stmt = self._base_select()
         for condition in filters:
             stmt = stmt.where(condition)
@@ -102,7 +103,7 @@ class TenantRepository(Repository[ModelT]):
         )
         return result.scalar_one_or_none()
 
-    async def get_many(self, entity_ids: Sequence[uuid.UUID]) -> list[ModelT]:
+    async def get_many(self, entity_ids: Sequence[uuid.UUID]) -> builtins.list[ModelT]:
         if not entity_ids:
             return []
         result = await self.session.execute(
@@ -129,7 +130,7 @@ class TenantRepository(Repository[ModelT]):
         limit: int | None = None,
         offset: int | None = None,
         include_deleted: bool = False,
-    ) -> list[ModelT]:
+    ) -> builtins.list[ModelT]:
         stmt = self._base_select(include_deleted=include_deleted)
         for condition in filters:
             stmt = stmt.where(condition)

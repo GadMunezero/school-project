@@ -19,6 +19,7 @@ hidden behind a cache that could drift.
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from decimal import Decimal
 from typing import Any
@@ -128,7 +129,7 @@ class ReplayService:
             raise NotFoundError("Replay session not found.")
         return record
 
-    async def list(self) -> list[ReplaySession]:
+    async def list(self) -> builtins.list[ReplaySession]:
         return await self.repo.list(
             ReplaySession.user_id == self.user_id,
             order_by=[ReplaySession.last_interacted_at.desc().nullslast()],
@@ -252,7 +253,7 @@ class ReplayService:
         for action in record.state.get("actions", []):
             actions_by_index.setdefault(int(action["at_index"]), []).append(action)
 
-        equity_curve: list[dict[str, Any]] = []
+        equity_curve: builtins.list[dict[str, Any]] = []
         cursor = min(record.cursor_index, len(series) - 1)
 
         for index in range(cursor + 1):

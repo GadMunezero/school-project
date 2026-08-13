@@ -8,6 +8,7 @@ soft-deleted and existing references keep resolving.
 
 from __future__ import annotations
 
+import builtins
 import re
 import uuid
 from decimal import Decimal
@@ -130,7 +131,7 @@ class InstrumentService:
         await self.session.flush()
         return record
 
-    async def aliases(self, instrument_id: uuid.UUID) -> list[InstrumentAlias]:
+    async def aliases(self, instrument_id: uuid.UUID) -> builtins.list[InstrumentAlias]:
         result = await self.session.execute(
             select(InstrumentAlias)
             .where(InstrumentAlias.instrument_id == instrument_id)
@@ -151,7 +152,7 @@ class TagService:
         self.actor_user_id = actor_user_id
         self.repo = TagRepository(session, organization_id)
 
-    async def list_with_counts(self) -> list[tuple[Tag, int]]:
+    async def list_with_counts(self) -> builtins.list[tuple[Tag, int]]:
         from tradeloom.models.trading import TradeTag
 
         tags = await self.repo.list(order_by=[Tag.category.asc(), Tag.name.asc()])
@@ -215,7 +216,7 @@ class SetupService:
         self.actor_user_id = actor_user_id
         self.repo = SetupRepository(session, organization_id)
 
-    async def list_with_counts(self) -> list[tuple[Setup, int]]:
+    async def list_with_counts(self) -> builtins.list[tuple[Setup, int]]:
         setups = await self.repo.list(order_by=[Setup.name.asc()])
         counts = await self.session.execute(
             select(Trade.setup_id, func.count())
@@ -428,7 +429,7 @@ class StrategyService:
             )
         await self.session.flush()
 
-    async def parameter_specs(self, version_id: uuid.UUID) -> list[StrategyParameter]:
+    async def parameter_specs(self, version_id: uuid.UUID) -> builtins.list[StrategyParameter]:
         result = await self.session.execute(
             select(StrategyParameter)
             .where(

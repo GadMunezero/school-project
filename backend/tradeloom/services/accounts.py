@@ -12,6 +12,7 @@ cannot drift the balance permanently.
 
 from __future__ import annotations
 
+import builtins
 import uuid
 from decimal import Decimal
 
@@ -73,7 +74,7 @@ class AccountService:
             order_by=[Account.is_default.desc(), Account.name.asc()],
         )
 
-    async def list_all(self) -> list[Account]:
+    async def list_all(self) -> builtins.list[Account]:
         return await self.accounts.list(order_by=[Account.is_default.desc(), Account.name.asc()])
 
     # -- writes --------------------------------------------------------------

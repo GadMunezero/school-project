@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,6 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from tradeloom.core.enums import UserRole, UserStatus
 from tradeloom.db.base import Base, SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from tradeloom.db.types import GUID, EnumType, JSONDict, TZDateTime
+
+if TYPE_CHECKING:  # avoids a circular import at runtime
+    from tradeloom.models.organization import OrganizationMember
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -64,7 +68,7 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     sessions: Mapped[list[UserSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="noload"
     )
-    memberships: Mapped[list[OrganizationMember]] = relationship(  # noqa: F821
+    memberships: Mapped[list[OrganizationMember]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         lazy="noload",
