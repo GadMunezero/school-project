@@ -1,0 +1,36 @@
+# Repository-wide Ruff configuration.
+#
+# `backend/pyproject.toml` configures the backend package for tooling that runs inside it;
+# this file makes `ruff check backend worker` from the repository root apply the same rules to
+# both deployables, so CI and a developer's local run agree.
+
+line-length = 100
+target-version = "py311"
+extend-exclude = ["backend/alembic/versions", "frontend", "node_modules"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF", "ASYNC", "S"]
+ignore = [
+    "B008",    # FastAPI Depends() in defaults is the documented idiom
+    "S101",    # asserts are used in tests
+    "RUF012",  # ClassVar annotations on declarative attrs are noisy
+    "SIM108",  # ternaries are not always clearer
+    # Optional strategy lifecycle hooks are deliberately concrete no-ops: a strategy should be
+    # able to implement only `on_bar`, so making them abstract would break every subclass.
+    "B027",
+    # Flags enum members and constants whose *names* contain "PASSWORD" (PASSWORD_CHANGED,
+    # PURPOSE_RESET_PASSWORD). None of them hold a credential.
+    "S105",
+    # `wait-for-db --timeout` is a CLI argument, not an asyncio cancellation scope.
+    "ASYNC109",
+    # Broad catches are used only where a secondary concern (audit write, progress update,
+    # storage cleanup) must never fail the primary operation. Each site logs and comments why.
+    "BLE001",
+]
+
+[lint.per-file-ignores]
+"backend/tests/**" = ["S", "E501"]
+"backend/tradeloom/seed/**" = ["S311"]  # deterministic non-crypto RNG for demo data
+
+[lint.isort]
+known-first-party = ["tradeloom", "worker"]
