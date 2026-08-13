@@ -27,7 +27,6 @@ data/        Seed fixtures and sample broker CSV files
 docker/      Dockerfiles and nginx configuration
 scripts/     Developer and CI helper scripts
 docs/        Architecture, database, backtesting, API, security and deployment docs
-tests/       End-to-end (Playwright) suite spanning the whole stack
 ```
 
 Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) first — it explains the module boundaries
@@ -95,8 +94,10 @@ which is what the test suite uses — no Postgres required to run `pytest`.
 | Frontend types | `cd frontend && npm run typecheck` |
 | Frontend unit tests | `cd frontend && npm run test` |
 | Frontend build | `cd frontend && npm run build` |
-| End-to-end | `cd tests && npx playwright test` |
 | Everything | `./scripts/check.sh` |
+
+There is no end-to-end suite yet; see the Limitations section of
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 CI (`.github/workflows/ci.yml`) runs the same commands plus a migration-drift check.
 

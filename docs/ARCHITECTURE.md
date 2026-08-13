@@ -94,15 +94,51 @@ Journal analytics map trades onto the engine's `SimTrade` shape and run them thr
 `PerformanceAnalyzer` the backtester uses, so a win rate means the same thing on the dashboard as
 it does in a backtest report.
 
+## The frontend
+
+The client is a Next.js App Router application under `frontend/`. It is a rendering layer: it
+holds no financial logic, and the four rules below are what keep it that way.
+
+**1. Money crosses the wire as strings, and stays a string.**
+The API serialises every `Decimal` as a JSON string. `src/lib/types.ts` types those fields as
+`DecimalString = string | null | undefined`, so `trade.net_pnl * 2` is a compile error rather than
+a silent precision loss. `src/lib/format.ts` formats those strings *textually* — grouping digits
+and rounding by propagating a carry through the characters — because `Number("1.005").toFixed(2)`
+returns `"1.00"`. The single documented exception is `toChartNumber`, used only for canvas pixel
+positions; it is named so that its use is visible in review. `src/lib/format.test.ts` covers the
+cases a double would get wrong.
+
+**2. `null` renders as an em dash, never as zero.**
+An undefined profit factor (no losing trades) and a profit factor of zero are different claims.
+Every formatter returns `"—"` for `null`, and `safe_div` on the server returns `None` rather than
+`0` so the distinction survives the round trip.
+
+**3. The frontend never decides authorization.**
+`useSession()` exposes the plan and role so the UI can *explain* why something is unavailable and
+hide a control the user cannot use. Every one of those checks is cosmetic — the server enforces
+the same rule and returns 403, 404 or an entitlement error regardless of what the client renders.
+Cross-tenant reads come back as 404, so a hidden button and a forged request end in the same
+place.
+
+**4. State that matters lives on the server.**
+TanStack Query caches API responses; Zustand holds only view preferences. Replay is the clearest
+case: stepping a bar is `POST /replay/{id}/step`, and the response contains `visible_candles` up
+to the cursor and nothing after it. The chart cannot show a future bar because the browser was
+never sent one — the look-ahead guarantee is structural, not a UI convention.
+
+Layout: `src/app/(app)/` holds the authenticated routes behind a shared shell, `src/app/` root
+holds the auth pages, `src/components/ui/` the primitives, `src/components/charts/` the
+lightweight-charts wrappers, and `src/lib/` the API client, query-key factory and formatters.
+
 ## Limitations
 
 Stated plainly rather than hidden:
 
-- **No frontend is included in this repository yet.** The API, its OpenAPI schema and the docs
-  are complete and exercised by tests; the Next.js client described in the README is not built.
-  `docker-compose.yml` references a `frontend` service that has no source directory, so
-  `docker compose up` will fail on that service until the client exists — bring up the rest with
-  `docker compose up postgres redis minio api worker`.
+- **The frontend has no end-to-end test suite.** It typechecks under `strict`, lints clean and
+  builds for production, and `src/lib/format.ts` — the module that keeps decimal strings away from
+  IEEE doubles — is covered by unit tests. The page-level flows (import wizard, replay stepping,
+  backtest submission) have been exercised only against the API by hand; Playwright specs are not
+  written.
 - **No live market data provider.** The bundled source is synthetic and flagged
   `is_realtime = false`; nothing is ever labelled real-time. Adding a vendor means implementing
   `MarketDataProvider` and registering it — the engine does not change.

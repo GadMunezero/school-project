@@ -29,4 +29,21 @@ DATABASE_URL="sqlite+aiosqlite:///$SCRATCH/check.db" SECRET_KEY=ci-only-secret-k
   "$BIN/alembic" -c backend/alembic.ini check
 rm -rf "$SCRATCH"
 
+# The frontend checks need node_modules; skip rather than fail if the client hasn't been installed.
+if [ -d frontend/node_modules ]; then
+  step "frontend lint"
+  (cd frontend && npm run --silent lint)
+
+  step "frontend types"
+  (cd frontend && npm run --silent typecheck)
+
+  step "frontend tests"
+  (cd frontend && npm run --silent test)
+
+  step "frontend build"
+  (cd frontend && npm run --silent build)
+else
+  printf '\n\033[33m▸ frontend checks skipped (run "cd frontend && npm install" first)\033[0m\n'
+fi
+
 printf '\n\033[32mAll checks passed.\033[0m\n'

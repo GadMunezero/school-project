@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Palette.
+ *
+ * Light is the default; `.dark` on <html> swaps the same token names. Every colour used in the
+ * product resolves through one of these, so nothing hard-codes a hex value and the two themes
+ * cannot drift apart.
+ */
+:root {
+  --canvas: 250 250 249; /* page background */
+  --surface: 255 255 255; /* cards, panels */
+  --raised: 244 244 243; /* inputs, hover, table stripes */
+  --line: 226 226 224; /* borders and rules */
+  --ink: 24 27 26; /* primary text */
+  --muted: 90 96 94; /* secondary text */
+  --faint: 140 146 143; /* tertiary text, axis labels */
+  --accent: 17 94 79; /* brand: deep teal */
+  --accent-ink: 255 255 255;
+  --profit: 13 122 90;
+  --loss: 178 45 58;
+  --warn: 166 108 16;
+  --info: 39 89 148;
+}
+
+.dark {
+  --canvas: 13 15 15;
+  --surface: 22 25 25;
+  --raised: 32 36 36;
+  --line: 48 53 53;
+  --ink: 236 238 237;
+  --muted: 158 166 163;
+  --faint: 114 122 119;
+  --accent: 45 166 138;
+  --accent-ink: 8 20 17;
+  --profit: 52 178 133;
+  --loss: 232 108 116;
+  --warn: 214 158 62;
+  --info: 106 165 224;
+}
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+
+  html {
+    /* Prevents layout shift when a page grows past the viewport. */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04";
+  }
+
+  /* Numerals in tables and metrics must align on the decimal point. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+
+  /* Respect a user's reduced-motion preference rather than overriding it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .skeleton {
+    @apply relative overflow-hidden rounded bg-raised;
+  }
+
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    content: "";
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--surface) / 0),
+      rgb(var(--surface) / 0.55),
+      rgb(var(--surface) / 0)
+    );
+  }
+}
