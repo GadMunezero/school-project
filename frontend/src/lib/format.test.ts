@@ -7,6 +7,7 @@ import {
   formatInteger,
   formatMoney,
   formatPercent,
+  formatPrice,
   formatQuantity,
   formatR,
   humanise,
@@ -102,6 +103,18 @@ describe("unit suffixes", () => {
     expect(formatQuantity("0.5")).toBe("0.5");
     expect(formatQuantity("0.00012345")).toBe("0.00012345");
     expect(formatQuantity(null)).toBe("—");
+  });
+
+  it("caps a price's fractional tail without touching its leading digits", () => {
+    // A derived average fill price can carry a long tail. Showing it raw is what this exists to
+    // prevent; the value itself is unchanged server-side.
+    // ...589764 rounds up at the sixth decimal, and the result keeps its place count.
+    expect(formatPrice("50953.860589764")).toBe("50,953.860590");
+    expect(formatPrice("45.4757707937")).toBe("45.475771");
+    expect(formatPrice("189.5")).toBe("189.50");
+    expect(formatPrice("189")).toBe("189.00");
+    expect(formatPrice("0.00012345")).toBe("0.000123");
+    expect(formatPrice(null)).toBe("—");
   });
 
   it("formats integers", () => {

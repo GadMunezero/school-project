@@ -11,6 +11,8 @@ import {
   formatInteger,
   formatMoney,
   formatPercent,
+  formatPrice,
+  formatQuantity,
   formatR,
   formatRatio,
   humanise,
@@ -241,7 +243,8 @@ export default function DashboardPage() {
                         {trade.symbol}
                       </Link>
                       <span className="text-xs text-muted">
-                        {humanise(trade.direction)} · {trade.quantity} @ {trade.entry_price}
+                        {humanise(trade.direction)} · {formatQuantity(trade.quantity)} @{" "}
+                        {formatPrice(trade.entry_price)}
                       </span>
                     </li>
                   ))}

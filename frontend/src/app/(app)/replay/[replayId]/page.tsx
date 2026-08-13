@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import {
   formatDateTime,
   formatMoney,
+  formatPrice,
   formatQuantity,
   formatR,
   humanise,
@@ -222,7 +223,7 @@ export default function ReplayDetailPage() {
                 </div>
                 <div className="tnum text-xs text-muted">
                   Close{" "}
-                  <span className="font-medium text-ink">{data.current_bar?.close ?? "—"}</span>
+                  <span className="font-medium text-ink">{formatPrice(data.current_bar?.close)}</span>
                   <span className="mx-2 text-line">|</span>
                   {formatDateTime(data.current_bar?.time)}
                 </div>
@@ -327,9 +328,9 @@ export default function ReplayDetailPage() {
                       <Badge tone="neutral">{humanise(order.order_type)}</Badge>
                     </div>
                     <p className="mt-0.5 tnum text-2xs text-faint">
-                      {order.limit_price ? `limit ${order.limit_price}` : null}
+                      {order.limit_price ? `limit ${formatPrice(order.limit_price)}` : null}
                       {order.limit_price && order.stop_price ? " · " : null}
-                      {order.stop_price ? `stop ${order.stop_price}` : null}
+                      {order.stop_price ? `stop ${formatPrice(order.stop_price)}` : null}
                       {!order.limit_price && !order.stop_price ? humanise(order.intent) : null}
                     </p>
                   </li>
@@ -411,7 +412,7 @@ function PositionPanel({
       />
       <dl className="space-y-2">
         <Row label="Quantity" value={formatQuantity(position.quantity)} />
-        <Row label="Average price" value={position.average_price ?? "—"} />
+        <Row label="Average price" value={formatPrice(position.average_price)} />
         <Row
           label="Open P&L"
           value={formatMoney(position.unrealized_pnl, state.currency, { signed: true })}

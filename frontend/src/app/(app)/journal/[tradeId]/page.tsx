@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatMoney,
   formatPercent,
+  formatPrice,
   formatQuantity,
   formatR,
   formatRatio,
@@ -259,7 +260,7 @@ export default function TradeDetailPage() {
                           {order.is_entry === null ? "—" : order.is_entry ? "Open" : "Close"}
                         </td>
                         <td className="tnum py-2 text-right text-xs">{formatQuantity(order.filled_quantity)}</td>
-                        <td className="tnum py-2 text-right text-xs">{order.average_fill_price}</td>
+                        <td className="tnum py-2 text-right text-xs">{formatPrice(order.average_fill_price)}</td>
                         <td className="tnum py-2 text-right text-xs text-muted">
                           {formatMoney(order.commission, trade.currency)}
                         </td>
@@ -274,10 +275,10 @@ export default function TradeDetailPage() {
           <Card>
             <CardHeader title="Execution quality" />
             <dl className="space-y-3">
-              <Row label="Entry (avg)" value={trade.entry_price ?? "—"} />
-              <Row label="Exit (avg)" value={trade.exit_price ?? "—"} />
-              <Row label="Initial stop" value={trade.initial_stop_loss ?? trade.stop_loss ?? "—"} />
-              <Row label="Target" value={trade.take_profit ?? "—"} />
+              <Row label="Entry (avg)" value={formatPrice(trade.entry_price)} />
+              <Row label="Exit (avg)" value={formatPrice(trade.exit_price)} />
+              <Row label="Initial stop" value={formatPrice(trade.initial_stop_loss ?? trade.stop_loss)} />
+              <Row label="Target" value={formatPrice(trade.take_profit)} />
               <Row
                 label="Planned R:R"
                 value={formatRatio(detail.data?.planned_reward_risk)}

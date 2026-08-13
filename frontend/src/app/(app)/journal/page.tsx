@@ -12,6 +12,7 @@ import {
   formatDuration,
   formatMoney,
   formatPercent,
+  formatPrice,
   formatQuantity,
   formatR,
   humanise,
@@ -179,8 +180,8 @@ export default function JournalPage() {
         enableSorting: false,
         cell: ({ row }) => (
           <span className="tnum text-xs text-muted">
-            {row.original.entry_price}
-            {row.original.exit_price ? ` → ${row.original.exit_price}` : ""}
+            {formatPrice(row.original.entry_price)}
+            {row.original.exit_price ? ` → ${formatPrice(row.original.exit_price)}` : ""}
           </span>
         ),
       },

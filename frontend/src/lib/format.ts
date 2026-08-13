@@ -152,6 +152,26 @@ export function formatQuantity(value: DecimalString): string {
   return formatDecimal(value, { places: Math.min(trimmed.length, 8) });
 }
 
+/**
+ * An instrument price.
+ *
+ * Prices are not money amounts: a currency's minor units say nothing about how finely an
+ * instrument quotes. An equity ticks in cents, a currency pair in pips, and a crypto pair can
+ * carry eight decimals — and the API sends whatever precision the fill actually had, which for a
+ * derived average can be a long tail. So: always show at least two decimals, keep genuine
+ * precision up to six, and round the tail away rather than printing it.
+ *
+ * Six is a display decision, not a storage one. The value is unchanged server-side; this only
+ * stops a page rendering "50953.860589764" where a trader expects a price.
+ */
+export function formatPrice(value: DecimalString, fallback = "—"): string {
+  if (value === null || value === undefined) return fallback;
+  const parsed = parse(value);
+  if (!parsed) return fallback;
+  const significant = parsed.fraction.replace(/0+$/, "").length;
+  return formatDecimal(value, { places: Math.min(Math.max(significant, 2), 6), fallback });
+}
+
 export function formatInteger(value: number | null | undefined, fallback = "—"): string {
   if (value === null || value === undefined || Number.isNaN(value)) return fallback;
   return group(String(Math.trunc(value)));

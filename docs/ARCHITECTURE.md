@@ -134,11 +134,10 @@ lightweight-charts wrappers, and `src/lib/` the API client, query-key factory an
 
 Stated plainly rather than hidden:
 
-- **The frontend has no end-to-end test suite.** It typechecks under `strict`, lints clean and
-  builds for production, and `src/lib/format.ts` — the module that keeps decimal strings away from
-  IEEE doubles — is covered by unit tests. The page-level flows (import wizard, replay stepping,
-  backtest submission) have been exercised only against the API by hand; Playwright specs are not
-  written.
+- **The end-to-end suite does not cover every page.** It covers auth, tenancy, the journal, the
+  dashboard, the import round-trip and replay — the flows where a defect would corrupt data or
+  leak it. Backtest submission, billing, settings and the admin console are exercised only by the
+  API tests and by hand.
 - **No live market data provider.** The bundled source is synthetic and flagged
   `is_realtime = false`; nothing is ever labelled real-time. Adding a vendor means implementing
   `MarketDataProvider` and registering it — the engine does not change.

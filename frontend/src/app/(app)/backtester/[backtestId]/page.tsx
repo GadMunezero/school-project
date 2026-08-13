@@ -13,6 +13,7 @@ import {
   formatInteger,
   formatMoney,
   formatPercent,
+  formatQuantity,
   formatR,
   formatRatio,
   humanise,
@@ -288,7 +289,7 @@ export default function BacktestDetailPage() {
                         <td className="px-3 py-2 text-xs text-muted">
                           {trade.exit_timestamp ? `${formatDateTime(trade.exit_timestamp)} @ ${trade.exit_price}` : "—"}
                         </td>
-                        <td className="tnum px-3 py-2 text-right text-xs">{trade.quantity}</td>
+                        <td className="tnum px-3 py-2 text-right text-xs">{formatQuantity(trade.quantity)}</td>
                         <td className={cn("tnum px-3 py-2 text-right font-medium", pnlClass(trade.net_pnl))}>
                           {formatMoney(trade.net_pnl, currency, { signed: true })}
                         </td>
