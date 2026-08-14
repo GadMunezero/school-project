@@ -196,15 +196,30 @@ class Session:
         return min(bar.low for bar in self.bars)
 
 
-def group_sessions(series: BarSeries, timezone: str = "UTC") -> builtins.list[Session]:
-    """Split a bar series into trading days by local date.
+#: Timeframes where one bar already *is* one session.
+SESSION_TIMEFRAMES = frozenset({"1d", "1w"})
 
-    The timezone matters and is not cosmetic: a US futures session that opens at 18:00 New York
-    belongs to the *next* calendar day locally, and grouping in UTC would cut it in half.
+
+def group_sessions(
+    series: BarSeries, timezone: str = "UTC", timeframe: str | None = None
+) -> builtins.list[Session]:
+    """Split a bar series into trading days.
+
+    For intraday bars the timezone matters and is not cosmetic: a US futures session opening at
+    18:00 New York belongs to the *next* trading day, and grouping in UTC would cut it in half.
+
+    For daily and weekly bars it must not be applied at all. A daily bar carries a date, not a
+    moment — vendors publish it at midnight UTC — so converting that midnight into another zone
+    walks it back into the previous day. Real VIX data made this obvious: every session landed one
+    weekday early, producing Sunday sessions for a market that does not trade on Sundays and no
+    Friday sessions at all. So a daily bar is grouped by its own date, untouched.
     """
+    daily = timeframe in SESSION_TIMEFRAMES if timeframe else False
+
     grouped: dict[date, builtins.list[Bar]] = {}
     for bar in series:
-        grouped.setdefault(local_date(bar.opened_at, timezone), []).append(bar)
+        day = bar.opened_at.date() if daily else local_date(bar.opened_at, timezone)
+        grouped.setdefault(day, []).append(bar)
 
     # Sorted by day: BarSeries guarantees ascending bars, but a caller could hand us a series
     # stitched from two fetches, and a report that walked days out of order would compare the
@@ -222,6 +237,7 @@ def initial_balance(
     *,
     timezone: str = "UTC",
     minutes: int = 60,
+    timeframe: str | None = None,
 ) -> ReportResult:
     """Does the opening range break one side, or both?
 
@@ -233,7 +249,7 @@ def initial_balance(
     only ever takes one side is a session where the first break tended to hold.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone))
+    days = _limited(group_sessions(series, timezone, timeframe))
 
     for index, session in enumerate(days):
         context = session_context(days, index)
@@ -323,6 +339,7 @@ def gap_fill(
     *,
     timezone: str = "UTC",
     minimum_percent: Decimal = Decimal("0.1"),
+    timeframe: str | None = None,
 ) -> ReportResult:
     """When a session opens away from the last close, does it trade back to it?
 
@@ -331,7 +348,7 @@ def gap_fill(
     qualifying gap are bucketed as ``no_setup`` and left out of the percentage entirely.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone))
+    days = _limited(group_sessions(series, timezone, timeframe))
 
     for index, session in enumerate(days):
         if index == 0:
@@ -401,14 +418,16 @@ def gap_fill(
     )
 
 
-def previous_day_levels(series: BarSeries, *, timezone: str = "UTC") -> ReportResult:
+def previous_day_levels(
+    series: BarSeries, *, timezone: str = "UTC", timeframe: str | None = None
+) -> ReportResult:
     """Does today take out yesterday's high, yesterday's low, both, or neither?
 
     Yesterday's extremes are fixed before today opens, which makes this the cleanest look-ahead
     test in the module: the levels come from one session and the outcome from the next.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone))
+    days = _limited(group_sessions(series, timezone, timeframe))
 
     for index, session in enumerate(days):
         if index == 0:
@@ -696,6 +715,7 @@ def run_report(
     *,
     timezone: str = "UTC",
     parameters: Mapping[str, object] | None = None,
+    timeframe: str | None = None,
 ) -> ReportResult:
     """Run a registered report by key.
 
@@ -707,7 +727,7 @@ def run_report(
     if builder is None:
         raise KeyError(f"unknown report: {key}")
 
-    kwargs: dict[str, object] = {"timezone": timezone}
+    kwargs: dict[str, object] = {"timezone": timezone, "timeframe": timeframe}
     values = dict(parameters or {})
 
     if key == "initial_balance" and "minutes" in values:

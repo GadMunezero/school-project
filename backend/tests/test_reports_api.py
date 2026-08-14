@@ -9,11 +9,19 @@ from tests.conftest import ApiUser
 pytestmark = pytest.mark.anyio
 
 
-async def _instrument(alice: ApiUser) -> dict | None:
-    response = await alice.get("/api/v1/instruments", params={"page_size": 5})
-    assert response.status_code == 200, response.text
-    data = response.json()["data"]
-    return data[0] if data else None
+async def _instrument(alice: ApiUser) -> dict:
+    """An instrument this test owns.
+
+    Reading whichever instrument the workspace happens to contain made these tests skip
+    themselves on a fresh database, which is no coverage at all. Creating one makes them run
+    everywhere and keeps the fixture honest about what it depends on.
+    """
+    response = await alice.post(
+        "/api/v1/instruments",
+        json={"symbol": "RPTX", "name": "Report Test Index", "asset_type": "index"},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["data"]
 
 
 async def test_the_registry_is_published_with_its_parameters(alice: ApiUser) -> None:
@@ -33,8 +41,6 @@ async def test_the_registry_is_published_with_its_parameters(alice: ApiUser) -> 
 
 async def test_an_unknown_report_is_a_404_not_an_empty_result(alice: ApiUser) -> None:
     instrument = await _instrument(alice)
-    if instrument is None:
-        pytest.skip("no instruments in this workspace")
 
     response = await alice.get(
         "/api/v1/reports/does-not-exist", params={"instrument_id": instrument["id"]}
@@ -53,8 +59,6 @@ async def test_an_unknown_instrument_is_refused(alice: ApiUser) -> None:
 
 async def test_an_instrument_with_no_candles_says_so(alice: ApiUser) -> None:
     instrument = await _instrument(alice)
-    if instrument is None:
-        pytest.skip("no instruments in this workspace")
 
     response = await alice.get(
         "/api/v1/reports/gap_fill",

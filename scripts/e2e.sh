@@ -54,7 +54,10 @@ step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 stop_previous_servers() {
   local found=0 pid cmd
   for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
-    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || continue
+    # The redirect is inside the subshell so that a process exiting between the listing and this
+    # read stays silent: the shell reports a failed redirect itself, where `2>/dev/null` on `tr`
+    # would never see it.
+    cmd=$( (tr '\0' ' ' < "/proc/$pid/cmdline") 2>/dev/null ) || continue
     # Match only the servers this script starts. Deliberately not port-scoped: mapping a port to
     # a pid needs /proc/net inspection that is namespace-wide rather than per-process, and this
     # script is about to start its own pair anyway.

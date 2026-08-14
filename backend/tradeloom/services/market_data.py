@@ -164,6 +164,42 @@ class MarketDataService:
             )
         return sources[0]
 
+    async def source_with_data(
+        self, instrument_id: uuid.UUID, timeframe: Timeframe
+    ) -> MarketDataSource | None:
+        """Pick the source that actually holds this series, or ``None`` if nothing does.
+
+        The configured default is only a fallback. Once a user imports their own candles for an
+        instrument, those are what every report, backtest and replay must read — resolving to the
+        configured default would silently keep serving seed data alongside real data and quietly
+        answer questions about the wrong prices.
+
+        Where several sources hold the same series, the most recently updated wins, on the
+        assumption that a fresh import supersedes an older load.
+        """
+        result = await self.session.execute(
+            select(MarketDataCoverage, MarketDataSource)
+            .join(MarketDataSource, MarketDataSource.id == MarketDataCoverage.source_id)
+            .where(
+                MarketDataCoverage.instrument_id == instrument_id,
+                MarketDataCoverage.timeframe == timeframe,
+                MarketDataCoverage.bar_count > 0,
+            )
+            .order_by(MarketDataCoverage.last_bar_at.desc())
+        )
+        rows = result.all()
+        if rows:
+            return rows[0][1]
+        # Nothing stored for this series yet. Fall back to the configured default so a caller
+        # asking about a seeded instrument still reads from it — but a workspace with no sources
+        # at all is not an error here. Returning None lets the caller say "no candles for this
+        # symbol", which is the truth, instead of "no market data source is configured", which is
+        # an operator's problem leaking into an end user's report screen.
+        try:
+            return await self.default_source()
+        except NotFoundError:
+            return None
+
     def provider_for(self, source: MarketDataSource) -> MarketDataProvider:
         """Resolve a source row to a provider implementation.
 
@@ -187,8 +223,16 @@ class MarketDataService:
         start: datetime | None = None,
         end: datetime | None = None,
         limit: int | None = None,
-    ) -> tuple[BarSeries, MarketDataSource]:
-        resolved = source or await self.default_source()
+    ) -> tuple[BarSeries, MarketDataSource | None]:
+        """Stored candles, and the source they came from.
+
+        A ``None`` source always arrives with an empty series: there was nowhere to read from.
+        Callers that render the source must therefore check the series first, which is the same
+        check they already need before reporting on it.
+        """
+        resolved = source or await self.source_with_data(instrument_id, timeframe)
+        if resolved is None:
+            return BarSeries([]), None
         provider = self.provider_for(resolved)
         bars = await provider.fetch(
             CandleRequest(

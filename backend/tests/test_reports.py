@@ -69,6 +69,44 @@ class TestGrouping:
         assert session.high == Decimal("108")
         assert session.low == Decimal("97")
 
+    def test_a_daily_bar_keeps_its_own_date_in_every_timezone(self) -> None:
+        """A daily bar carries a date, not a moment.
+
+        Vendors stamp them at midnight UTC, so converting that midnight into a western zone
+        walks every bar back into the previous day. Real CBOE VIX data made the damage
+        obvious: sessions landed one weekday early, producing Sunday sessions for a market
+        that does not trade on Sundays, and no Friday sessions at all.
+        """
+        # Friday, Monday, Tuesday — a normal week with the weekend closed.
+        days = ["2026-03-06", "2026-03-09", "2026-03-10"]
+        bars = [
+            bar(
+                datetime.fromisoformat(f"{day}T00:00:00").replace(tzinfo=UTC),
+                "100",
+                "101",
+                "99",
+                "100",
+            )
+            for day in days
+        ]
+
+        for timezone in ("UTC", "America/New_York", "Asia/Tokyo"):
+            sessions = group_sessions(BarSeries(bars), timezone, timeframe="1d")
+            assert [s.day.isoformat() for s in sessions] == days, timezone
+            assert not [s for s in sessions if s.day.weekday() >= 5], timezone
+
+    def test_intraday_bars_still_group_by_local_date(self) -> None:
+        """The daily rule must not leak into intraday data, where the zone genuinely matters."""
+        # 00:30 UTC on the 3rd is still the evening of the 2nd in New York.
+        when = datetime.fromisoformat("2026-03-03T00:30:00").replace(tzinfo=UTC)
+        bars = BarSeries([bar(when, "100", "101", "99", "100")])
+
+        assert group_sessions(bars, "UTC", timeframe="1h")[0].day.isoformat() == "2026-03-03"
+        assert (
+            group_sessions(bars, "America/New_York", timeframe="1h")[0].day.isoformat()
+            == "2026-03-02"
+        )
+
 
 class TestInitialBalance:
     def test_a_session_that_only_breaks_upward_is_a_single_break(self) -> None:

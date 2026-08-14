@@ -80,7 +80,7 @@ async def run(
 
     market_data = MarketDataService(tenant.session)
     series, source = await market_data.get_bars(instrument.id, timeframe, start=start, end=end)
-    if len(series) == 0:
+    if len(series) == 0 or source is None:
         raise UnprocessableStateError(
             f"No {timeframe.value} candles are stored for {instrument.symbol}."
         )
@@ -91,7 +91,13 @@ async def run(
     if minimum_percent is not None:
         parameters["minimum_percent"] = str(minimum_percent)
 
-    result = run_report(report_key, series, timezone=session_timezone, parameters=parameters)
+    result = run_report(
+        report_key,
+        series,
+        timezone=session_timezone,
+        parameters=parameters,
+        timeframe=timeframe.value,
+    )
     payload = result.to_dict()
     payload["instrument"] = {
         "id": str(instrument.id),

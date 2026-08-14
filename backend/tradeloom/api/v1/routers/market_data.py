@@ -95,7 +95,8 @@ async def candles(
 
     service = MarketDataService(tenant.session)
     source = await service.get_source(source_id) if source_id else await service.default_source()
-    series, resolved = await service.get_bars(
+    # The source is resolved above and passed in, so it is what get_bars reads from.
+    series, _ = await service.get_bars(
         instrument.id, timeframe, source=source, start=start, end=end, limit=limit
     )
 
@@ -107,10 +108,10 @@ async def candles(
             "tick_size": format(instrument.tick_size.normalize(), "f"),
         },
         "source": {
-            "id": str(resolved.id),
-            "key": resolved.key,
-            "name": resolved.name,
-            "is_realtime": resolved.is_realtime,
+            "id": str(source.id),
+            "key": source.key,
+            "name": source.name,
+            "is_realtime": source.is_realtime,
         },
         "timeframe": timeframe.value,
         "candles": MarketDataService.to_chart_payload(series),
