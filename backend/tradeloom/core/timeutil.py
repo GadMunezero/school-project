@@ -127,6 +127,22 @@ def local_date(value: datetime, zone_name: str | None = None) -> date:
     return to_zone(value, zone_name).date()
 
 
+def trading_day(
+    value: datetime, asset_type: AssetType | str | None, zone_name: str | None = None
+) -> date:
+    """Which trading day a moment belongs to for a given market.
+
+    The market's own boundary wins where it has one, because that is what the day *is*: a futures
+    trade closed at 19:00 New York on Monday belongs to Tuesday's session, and filing it under
+    Monday would put it in a day that had already settled. Everything else falls back to the local
+    date in ``zone_name`` — the account's timezone for a trade, the market's for generated data.
+    """
+    boundary = boundary_for(asset_type)
+    if boundary is not None:
+        return boundary.session_date(value)
+    return local_date(value, zone_name)
+
+
 def session_for(value: datetime, zone_name: str | None = None) -> TradingSession:
     """Bucket a timestamp into a trading session using the account's local clock."""
     local_time = to_zone(value, zone_name).time()
@@ -188,5 +204,6 @@ __all__ = [
     "session_for",
     "start_of_day",
     "to_zone",
+    "trading_day",
     "utcnow",
 ]

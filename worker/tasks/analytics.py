@@ -16,7 +16,7 @@ from sqlalchemy import select
 from tradeloom.core.enums import TradeStatus
 from tradeloom.core.logging import get_logger
 from tradeloom.core.money import ZERO, quantize_money, safe_div
-from tradeloom.core.timeutil import local_date
+from tradeloom.core.timeutil import trading_day
 from tradeloom.db.session import session_scope
 from tradeloom.models.account import Account, AccountSnapshot
 from tradeloom.models.organization import Organization
@@ -94,7 +94,12 @@ async def _rebuild_account(session: Any, organization_id: uuid.UUID, account_id:
 
     by_day: dict[Any, list[Trade]] = {}
     for trade in trades:
-        day = local_date(trade.exit_timestamp or trade.entry_timestamp, account.timezone)
+        # By the market's trading day, not the calendar's. A futures trade closed at 19:00 New
+        # York belongs to the next session, and booking it against the day that had already
+        # settled would move P&L into a snapshot whose closing balance is history.
+        day = trading_day(
+            trade.exit_timestamp or trade.entry_timestamp, trade.asset_type, account.timezone
+        )
         by_day.setdefault(day, []).append(trade)
 
     existing = await session.execute(

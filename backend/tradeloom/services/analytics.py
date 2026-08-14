@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from tradeloom.core.enums import TradeStatus
 from tradeloom.core.money import HUNDRED, ZERO, quantize_money, quantize_percent, safe_div
-from tradeloom.core.timeutil import ensure_aware, to_zone, utcnow
+from tradeloom.core.timeutil import ensure_aware, trading_day, utcnow
 from tradeloom.engine.performance import EquitySample, PerformanceAnalyzer
 from tradeloom.engine.portfolio import SimTrade
 from tradeloom.models.account import Account
@@ -83,7 +83,7 @@ class AnalyticsService:
             rows = rows[:MAX_ANALYTICS_TRADES]
 
         starting_capital = await self._starting_capital(filters)
-        equity_curve = self._build_equity_curve(rows, starting_capital)
+        equity_curve = self._build_equity_curve(rows, starting_capital, zone)
 
         analyzer = PerformanceAnalyzer(
             trades=[_to_sim_trade(index + 1, trade) for index, trade in enumerate(rows)],
@@ -162,27 +162,39 @@ class AnalyticsService:
         return result.scalar_one_or_none() or "UTC"
 
     def _build_equity_curve(
-        self, trades: list[Trade], starting_capital: Decimal
+        self, trades: list[Trade], starting_capital: Decimal, zone: str
     ) -> list[EquitySample]:
         """One sample per closed trade, plus an opening point.
 
         Trades are already ordered by exit time, so the running total is the realised equity path
         a trader actually experienced.
+
+        Each sample carries the trading day of the trade that produced it, so daily returns bucket
+        the same way the calendar does — by the market's session for futures and FX, by the local
+        date for everything else.
         """
         if not trades:
             return []
         first = trades[0]
         opened_at = ensure_aware(first.entry_timestamp)
-        samples = [EquitySample(timestamp=opened_at, equity=starting_capital)]
+        samples = [
+            EquitySample(
+                timestamp=opened_at,
+                equity=starting_capital,
+                trading_day=trading_day(opened_at, first.asset_type, zone),
+            )
+        ]
 
         running = starting_capital
         for trade in trades:
             running = quantize_money(running + trade.net_pnl)
+            closed_at = ensure_aware(trade.exit_timestamp or trade.entry_timestamp)
             samples.append(
                 EquitySample(
-                    timestamp=ensure_aware(trade.exit_timestamp or trade.entry_timestamp),
+                    timestamp=closed_at,
                     equity=running,
                     realized_pnl=quantize_money(running - starting_capital),
+                    trading_day=trading_day(closed_at, trade.asset_type, zone),
                 )
             )
         return samples
@@ -210,7 +222,9 @@ class AnalyticsService:
         """Per-day P&L, the source for the dashboard's calendar heatmap."""
         buckets: dict[date, dict[str, Any]] = {}
         for trade in trades:
-            day = to_zone(trade.exit_timestamp or trade.entry_timestamp, zone).date()
+            # The same trading day the snapshots use, so a heatmap cell and an equity-curve point
+            # for one date describe the same set of trades.
+            day = trading_day(trade.exit_timestamp or trade.entry_timestamp, trade.asset_type, zone)
             entry = buckets.setdefault(
                 day, {"date": day.isoformat(), "net_pnl": ZERO, "trades": 0, "wins": 0}
             )

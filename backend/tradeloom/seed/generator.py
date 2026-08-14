@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -39,7 +39,7 @@ from tradeloom.core.enums import (
     UserStatus,
 )
 from tradeloom.core.money import quantize_money, quantize_price
-from tradeloom.core.timeutil import UTC, boundary_for, utcnow
+from tradeloom.core.timeutil import UTC, trading_day, utcnow
 from tradeloom.engine.bars import Bar
 from tradeloom.models.identity import User
 from tradeloom.models.imports import ImportTemplate
@@ -253,15 +253,8 @@ BROKER_TEMPLATES = (
 
 
 #: The New York clock, which is where the futures and FX trading day is defined.
-_MARKET_ZONE = ZoneInfo("America/New_York")
-
-
-def _session_day(asset_type: AssetType, moment: datetime) -> date:
-    """The trading day a generated bar belongs to, by the same rule the reports use."""
-    boundary = boundary_for(asset_type)
-    if boundary is not None:
-        return boundary.session_date(moment)
-    return moment.astimezone(_MARKET_ZONE).date()
+_MARKET_ZONE_NAME = "America/New_York"
+_MARKET_ZONE = ZoneInfo(_MARKET_ZONE_NAME)
 
 
 def _is_open(asset_type: AssetType, moment: datetime) -> bool:
@@ -580,8 +573,8 @@ class DemoSeeder:
             if (
                 bars
                 and spec.asset_type is not AssetType.CRYPTO
-                and _session_day(spec.asset_type, moment)
-                != _session_day(spec.asset_type, bars[-1].opened_at)
+                and trading_day(moment, spec.asset_type, _MARKET_ZONE_NAME)
+                != trading_day(bars[-1].opened_at, spec.asset_type, _MARKET_ZONE_NAME)
                 and rng.random() < 0.35
             ):
                 open_price = max(0.01, price * (1 + rng.gauss(0, volatility * 2.5)))

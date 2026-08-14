@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -53,6 +53,10 @@ class EquitySample:
     unrealized_pnl: Decimal = ZERO
     open_positions: int = 0
     exposure: Decimal = ZERO
+    #: Which trading day this sample belongs to, when the caller knows the market it came from.
+    #: Journal analytics stamps it from the trade's asset type so futures and FX land in the
+    #: session that was actually open. Left unset, the day falls back to the local calendar date.
+    trading_day: date | None = None
 
 
 @dataclass(slots=True)
@@ -464,7 +468,13 @@ class PerformanceAnalyzer:
             return []
         by_day: dict[str, tuple[Decimal, Decimal]] = {}
         for sample in self.equity_curve:
-            key = to_zone(sample.timestamp, self.timezone).strftime("%Y-%m-%d")
+            # Prefer the trading day the sample was stamped with, so these rows agree with the
+            # calendar breakdown for markets whose day is not a calendar day.
+            key = (
+                sample.trading_day.isoformat()
+                if sample.trading_day is not None
+                else to_zone(sample.timestamp, self.timezone).strftime("%Y-%m-%d")
+            )
             if key not in by_day:
                 by_day[key] = (sample.equity, sample.equity)
             else:
