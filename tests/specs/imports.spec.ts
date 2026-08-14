@@ -20,12 +20,13 @@ test.describe("CSV import", () => {
   test("upload → map → validate → commit → revert round-trips cleanly", async ({
     authedPage: page,
   }) => {
+    const account = await createAccount(page, "E2E round-trip");
     const tradesBefore = await countTrades(page);
 
     await page.goto("/imports");
     await page.getByRole("button", { name: "Upload CSV" }).click();
 
-    await page.getByLabel("Import into").selectOption({ index: 1 });
+    await page.getByLabel("Import into").selectOption(account);
     await page
       .locator("#i-file")
       .setInputFiles(path.join(SAMPLES, "us-equities-desktop.csv"));
@@ -71,10 +72,16 @@ test.describe("CSV import", () => {
   test("re-importing the same file skips rows it has already seen", async ({
     authedPage: page,
   }) => {
+    // Duplicate detection is scoped to the account — `orders.by_external_ids(account_id, …)` —
+    // so both passes must target the same one. Picking by dropdown index left that to the
+    // ordering of a shared account list; a dedicated account pins it down and keeps this test
+    // independent of the seeded workspace and of the round-trip test above.
+    const account = await createAccount(page, "E2E duplicates");
+
     const upload = async () => {
       await page.goto("/imports");
       await page.getByRole("button", { name: "Upload CSV" }).click();
-      await page.getByLabel("Import into").selectOption({ index: 1 });
+      await page.getByLabel("Import into").selectOption(account);
       await page.locator("#i-file").setInputFiles(path.join(SAMPLES, "crypto-exchange.csv"));
       await page.getByRole("button", { name: "Upload", exact: true }).click();
       await page.waitForURL(/\/imports\/[0-9a-f-]{36}/);
@@ -96,7 +103,7 @@ test.describe("CSV import", () => {
     // The second pass sees the same execution ids and must not double-count the fills.
     await page.goto("/imports");
     await page.getByRole("button", { name: "Upload CSV" }).click();
-    await page.getByLabel("Import into").selectOption({ index: 1 });
+    await page.getByLabel("Import into").selectOption(account);
     await page.locator("#i-file").setInputFiles(path.join(SAMPLES, "crypto-exchange.csv"));
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     await page.waitForURL(/\/imports\/[0-9a-f-]{36}/);
@@ -110,12 +117,47 @@ test.describe("CSV import", () => {
       .toBe("preview");
 
     const second = await fetchImport(page, secondId);
+    // Both passes must have landed on the same account, or "no duplicates" would be vacuous.
+    expect(second.account_id).toBe(account);
     expect(second.total_rows).toBeGreaterThan(0);
     // Every row carries an execution id already in the database, so none may be importable.
     expect(second.duplicate_rows).toBe(second.total_rows);
     expect(second.valid_rows).toBe(0);
   });
 });
+
+/** Create an account through the API and return its id, so tests never share one. */
+async function createAccount(
+  page: import("@playwright/test").Page,
+  name: string,
+): Promise<string> {
+  return page.evaluate(
+    async ([apiUrl, accountName]) => {
+      const csrf = document.cookie
+        .split("; ")
+        .find((entry) => entry.startsWith("tl_csrf="))
+        ?.split("=")[1];
+      const response = await fetch(`${apiUrl}/api/v1/accounts`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(csrf ? { "X-CSRF-Token": decodeURIComponent(csrf) } : {}),
+        },
+        // Unique per run, so a repeat run never collides with an earlier account.
+        body: JSON.stringify({
+          name: `${accountName} ${Date.now()}`,
+          account_type: "paper",
+          currency: "USD",
+          initial_balance: "100000",
+        }),
+      });
+      if (!response.ok) throw new Error(`could not create account: ${response.status}`);
+      return (await response.json()).data.id as string;
+    },
+    [API_URL, name] as const,
+  );
+}
 
 async function countTrades(page: import("@playwright/test").Page): Promise<number> {
   return page.evaluate(async (apiUrl) => {
