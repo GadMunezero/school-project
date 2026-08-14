@@ -82,7 +82,12 @@ test.describe("CSV import", () => {
       await expect(page.getByText("Rows in file")).toBeVisible();
       const id = page.url().split("/").pop()!;
       await page.getByRole("button", { name: /^Import \d+ rows$/ }).click();
-      await expect(page.getByText("Import complete")).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Import complete" })).toBeVisible();
+      // The heading renders from the mutation response; wait until the server itself reports
+      // the import committed before letting the next import depend on it.
+      await expect
+        .poll(async () => (await fetchImport(page, id)).status)
+        .toBe("completed");
       return id;
     };
 
@@ -96,10 +101,19 @@ test.describe("CSV import", () => {
     await page.getByRole("button", { name: "Upload", exact: true }).click();
     await page.waitForURL(/\/imports\/[0-9a-f-]{36}/);
     await page.getByRole("button", { name: "Validate rows" }).click();
-    await expect(page.getByText("Already imported")).toBeVisible();
 
-    const second = await fetchImport(page, page.url().split("/").pop()!);
-    expect(second.duplicate_rows).toBeGreaterThan(0);
+    // "Already imported" is a tally heading that renders whatever the count is, so its presence
+    // proves nothing. Wait for the server to finish validating, then read the counts it produced.
+    const secondId = page.url().split("/").pop()!;
+    await expect
+      .poll(async () => (await fetchImport(page, secondId)).status)
+      .toBe("preview");
+
+    const second = await fetchImport(page, secondId);
+    expect(second.total_rows).toBeGreaterThan(0);
+    // Every row carries an execution id already in the database, so none may be importable.
+    expect(second.duplicate_rows).toBe(second.total_rows);
+    expect(second.valid_rows).toBe(0);
   });
 });
 
