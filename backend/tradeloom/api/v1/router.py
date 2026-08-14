@@ -21,6 +21,7 @@ from tradeloom.api.v1.routers import (
     organizations,
     positions,
     replay,
+    reports,
     search,
     setups,
     strategies,
@@ -48,6 +49,7 @@ api_router.include_router(imports.router)
 api_router.include_router(backtests.router)
 api_router.include_router(replay.router)
 api_router.include_router(analytics.router)
+api_router.include_router(reports.router)
 api_router.include_router(files.router)
 api_router.include_router(search.router)
 api_router.include_router(notifications.router)

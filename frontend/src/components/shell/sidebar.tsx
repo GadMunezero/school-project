@@ -36,6 +36,7 @@ const PRIMARY: NavItem[] = [
 ];
 
 const RESEARCH: NavItem[] = [
+  { href: "/reports", label: "Reports", icon: Gauge },
   { href: "/strategies", label: "Strategies", icon: LineChart },
   { href: "/backtester", label: "Backtester", icon: FlaskConical, feature: "backtesting" },
   { href: "/replay", label: "Replay", icon: PlayCircle, feature: "replay" },

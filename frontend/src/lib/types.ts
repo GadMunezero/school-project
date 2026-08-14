@@ -789,6 +789,63 @@ export interface ReplaySummary {
   last_interacted_at: string | null;
 }
 
+// --- edge reports ------------------------------------------------------------
+
+export type ReportOutcome =
+  | "broke_up_only"
+  | "broke_down_only"
+  | "broke_both"
+  | "stayed_inside"
+  | "filled"
+  | "unfilled"
+  | "no_setup";
+
+export interface ReportSpec {
+  key: string;
+  name: string;
+  question: string;
+  description: string;
+  parameters: ParameterSpec[];
+}
+
+export interface ReportLevel {
+  key: string;
+  label: string;
+  /** A price, as a decimal string like every other price the API sends. */
+  price: DecimalString;
+}
+
+export interface ReportSession {
+  session_date: string;
+  outcome: ReportOutcome;
+  levels: ReportLevel[];
+  triggered_at: string | null;
+  /** The span to plot when this day is opened for verification. */
+  window_start: string;
+  window_end: string;
+  measures: Record<string, DecimalString>;
+}
+
+export interface ReportRun {
+  key: string;
+  name: string;
+  question: string;
+  headline_outcomes: ReportOutcome[];
+  /** Null when no session qualified — an undefined rate, never zero. */
+  hit_rate: DecimalString;
+  sample_size: number;
+  total_sessions: number;
+  buckets: Record<string, number>;
+  sessions: ReportSession[];
+  instrument: { id: UUID; symbol: string; name: string };
+  timeframe: Timeframe;
+  session_timezone: string;
+  source: { id: UUID; name: string };
+  /** False when the sample is too small to lean on; the UI says so rather than hiding it. */
+  sufficient_sample: boolean;
+  minimum_sample: number;
+}
+
 // --- platform ----------------------------------------------------------------
 
 export interface Notification {

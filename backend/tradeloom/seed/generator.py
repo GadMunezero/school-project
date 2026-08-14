@@ -528,7 +528,20 @@ class DemoSeeder:
 
             shock = rng.gauss(drift, volatility)
             open_price = price
-            close_price = max(0.01, price * (1 + shock))
+
+            # Markets that close overnight reopen away from the last print. Without this the walk
+            # is continuous, every session opens exactly where the previous one closed, and the
+            # gap-fill report correctly reports that no gap ever occurred — true, but it leaves
+            # the demo workspace unable to demonstrate the feature at all.
+            if (
+                bars
+                and spec.asset_type is not AssetType.CRYPTO
+                and moment.date() != bars[-1].opened_at.date()
+                and rng.random() < 0.35
+            ):
+                open_price = max(0.01, price * (1 + rng.gauss(0, volatility * 2.5)))
+
+            close_price = max(0.01, open_price * (1 + shock))
             wick = abs(rng.gauss(0, volatility * 0.6)) * price
             high = max(open_price, close_price) + wick
             low = max(0.005, min(open_price, close_price) - wick)
