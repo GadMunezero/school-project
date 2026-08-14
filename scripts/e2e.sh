@@ -94,6 +94,10 @@ stop_previous_servers
 step "seed a throwaway database"
 "$PY" -m tradeloom.cli reset --force >/dev/null
 "$PY" -m tradeloom.cli seed --demo --trades 150 --days 120
+# A platform administrator, so the admin console can be tested from both sides: that it works for
+# someone who holds the role, and that it is refused to the demo user who does not. Testing only
+# the hidden nav link would prove nothing — the frontend must never be what decides.
+"$PY" -m tradeloom.cli create-admin --email admin@example.com --password 'AdminOps!2024' >/dev/null
 
 step "start the API on :${API_PORT}"
 "$PY" -m uvicorn tradeloom.main:app --host 127.0.0.1 --port "$API_PORT" >"$WORK/api.log" 2>&1 &

@@ -338,3 +338,46 @@ class TestExcursions:
         )
         assert result.mfe_amount == D("0")
         assert result.mae_amount == D("50")
+
+
+class TestWireSerialisation:
+    """What the API puts on the wire, for the types it is opinionated about.
+
+    Both rules exist for the same reason: the frontend displays what the backend computed and must
+    never re-derive it. A Decimal sent as a JSON number loses precision in the parse; a datetime
+    sent as a Unix timestamp is not a date the client can read at all.
+    """
+
+    def test_decimals_go_out_as_strings(self) -> None:
+        from tradeloom.schemas.common import TradeloomModel
+
+        class Money(TradeloomModel):
+            amount: Decimal
+
+        assert Money(amount=Decimal("0.10")).model_dump_json() == '{"amount":"0.1"}'
+
+    def test_datetimes_go_out_as_iso_8601(self) -> None:
+        """Not a Unix timestamp.
+
+        The base model claims every field for serialisation, which switches off Pydantic's own
+        datetime encoder. Until this was handled explicitly, every datetime that a router did not
+        format by hand reached the client as a number — including a backtest's drawdown episodes,
+        which made the results page throw.
+        """
+        from tradeloom.schemas.common import TradeloomModel
+
+        class Moment(TradeloomModel):
+            when: datetime
+
+        payload = Moment(when=datetime(2026, 3, 16, 23, 0, tzinfo=UTC)).model_dump_json()
+        assert payload == '{"when":"2026-03-16T23:00:00Z"}'
+
+    def test_a_naive_datetime_is_published_as_utc(self) -> None:
+        """Everything is stored in UTC, so an unlabelled value is UTC rather than server-local."""
+        from tradeloom.schemas.common import TradeloomModel
+
+        class Moment(TradeloomModel):
+            when: datetime
+
+        payload = Moment(when=datetime(2026, 3, 16, 23, 0)).model_dump_json()
+        assert payload == '{"when":"2026-03-16T23:00:00Z"}'

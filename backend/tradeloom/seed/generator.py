@@ -318,6 +318,7 @@ class DemoSeeder:
             organization, user, accounts, instruments, strategies, setups, tags, trade_count
         )
         await self._journal(organization, user, trades)
+        backtests = await self._backtests(organization, user, instruments, strategies)
 
         self.summary = {
             "email": email,
@@ -329,6 +330,7 @@ class DemoSeeder:
             "setups": len(setups),
             "tags": len(tags),
             "trades": trades,
+            "backtests": backtests,
             "candle_days": candle_days,
         }
         return self.summary
@@ -840,6 +842,66 @@ class DemoSeeder:
         if spec.asset_type is AssetType.CRYPTO:
             return quantize_money(quantity * price * Decimal("0.00075"))
         return quantize_money(max(Decimal("1.00"), quantity * Decimal("0.005")))
+
+    async def _backtests(
+        self,
+        organization: Organization,
+        user: User,
+        instruments: list[Instrument],
+        strategies: list[Strategy],
+    ) -> int:
+        """One backtest, actually run.
+
+        A demo workspace whose backtester is empty cannot show what the feature produces, and the
+        results page has nothing to render for anyone looking at it — a reviewer, a new user, or
+        the end-to-end suite. The run goes through ``BacktestService.execute``, the same call the
+        Celery worker makes, so these are real engine results rather than a fabricated row that
+        merely looks like one.
+        """
+        from tradeloom.schemas.backtest import BacktestCreate
+        from tradeloom.services.backtests import BacktestService
+
+        executable = [s for s in strategies if s.kind is StrategyKind.BUILTIN]
+        equity = next((i for i in instruments if i.asset_type is AssetType.EQUITY), None)
+        if not executable or equity is None:
+            return 0
+
+        service = BacktestService(self.session, organization.id, actor_user_id=user.id)
+        source = await MarketDataService(self.session).source_by_key(SEED_SOURCE_KEY)
+        if source is None:
+            return 0
+
+        # Hourly rather than daily: the same span holds several times as many bars, so the run
+        # produces a set of trades worth looking at instead of a single lonely round trip.
+        coverage = await MarketDataService(self.session).coverage(
+            equity.id, Timeframe.H1, source.id
+        )
+        if coverage is None or coverage.first_bar_at is None or coverage.last_bar_at is None:
+            return 0
+
+        backtest = await service.create(
+            BacktestCreate(
+                name=f"{executable[0].name} on {equity.symbol}",
+                description="Seeded run so the results page has real engine output to show.",
+                strategy_id=executable[0].id,
+                instrument_id=equity.id,
+                market_data_source_id=source.id,
+                timeframe=Timeframe.H1,
+                start_date=coverage.first_bar_at.date(),
+                end_date=coverage.last_bar_at.date(),
+                initial_capital=Decimal("100000"),
+                risk_percent=Decimal(1),
+                commission_config={"model": "per_share", "rate": "0.005", "minimum": "1"},
+                slippage_config={"model": "fixed_ticks", "amount": "1"},
+            )
+        )
+        await self.session.flush()
+
+        run, _job = await service.submit(backtest.id)
+        await self.session.flush()
+        await service.execute(run.id)
+        await self.session.flush()
+        return 1
 
     async def _journal(self, organization: Organization, user: User, trade_count: int) -> None:
         entries = [

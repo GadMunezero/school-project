@@ -95,6 +95,7 @@ async def _seed(demo: bool, trades: int, days: int) -> int:
     print(f"  instruments  : {result['instruments']}")
     print(f"  trades       : {result['trades']}")
     print(f"  strategies   : {result['strategies']}")
+    print(f"  backtests    : {result['backtests']}")
     return 0
 
 

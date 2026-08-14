@@ -19,6 +19,8 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from tradeloom.core.timeutil import iso
+
 T = TypeVar("T")
 
 
@@ -34,9 +36,20 @@ class TradeloomModel(BaseModel):
     )
 
     @field_serializer("*", when_used="json", check_fields=False)
-    def _serialise_decimals(self, value: Any) -> Any:
+    def _serialise(self, value: Any) -> Any:
+        """Serialise the types the API is opinionated about.
+
+        The wildcard claims *every* field, which means Pydantic's own encoders no longer run for
+        any of them. Decimals were handled here from the start; datetimes were not, so they fell
+        through to the generic encoder and went out as Unix timestamps. Most routers had quietly
+        worked around it by calling ``isoformat()`` themselves, which hid the problem everywhere
+        except the schemas that did not — a backtest's drawdown episodes reached the browser as
+        integers, and the results page crashed trying to read a date out of one.
+        """
         if isinstance(value, Decimal):
             return format(value.normalize(), "f")
+        if isinstance(value, datetime):
+            return iso(value)
         return value
 
 
