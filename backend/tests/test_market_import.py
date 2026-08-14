@@ -294,6 +294,7 @@ class TestImportEndpoint:
             "column_mapping": self.MAPPING,
             "source_timezone": "UTC",
         }
+        summaries = []
         for _ in range(2):
             response = await alice.post(
                 "/api/v1/market-data/import",
@@ -301,6 +302,7 @@ class TestImportEndpoint:
                 data=payload,
             )
             assert response.status_code == 200, response.text
+            summaries.append(response.json()["data"])
 
         candles = await alice.get(
             "/api/v1/market-data/candles",
@@ -309,6 +311,12 @@ class TestImportEndpoint:
         # The unique key is (source, instrument, timeframe, opened_at); a second pass tops up
         # rather than doubling the series.
         assert len(candles.json()["data"]["candles"]) == 4
+
+        # And the second pass must say so. Reporting the parsed count as "stored" would tell a
+        # user who re-uploaded an overlapping export that it wrote four new candles, when it
+        # wrote none.
+        assert (summaries[0]["stored"], summaries[0]["already_stored"]) == (4, 0)
+        assert (summaries[1]["stored"], summaries[1]["already_stored"]) == (0, 4)
 
     async def test_a_report_can_run_on_imported_candles(self, alice) -> None:  # type: ignore[no-untyped-def]
         """The whole point: real candles in, a real statistic out."""

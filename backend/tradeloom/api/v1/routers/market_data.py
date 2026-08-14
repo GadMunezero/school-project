@@ -216,7 +216,7 @@ async def import_candles(
         tenant.session.add(source)
         await tenant.session.flush()
 
-    report = await service.ingest(
+    result = await service.ingest(
         source=source,
         instrument=instrument,
         timeframe=timeframe,
@@ -224,8 +224,12 @@ async def import_candles(
     )
     await tenant.session.commit()
 
-    summary["stored"] = parsed.accepted
+    # What was written, not what was parsed. Re-importing an overlapping export is normal, and
+    # reporting the parsed count as "stored" would claim thousands of new bars for an import that
+    # wrote none.
+    summary["stored"] = result.written
+    summary["already_stored"] = result.skipped
     summary["source"] = {"id": str(source.id), "name": source.name}
     # The series-level view: gaps, duplicates and out-of-order bars across what is now stored.
-    summary["quality"] = report.to_dict()
+    summary["quality"] = result.quality.to_dict()
     return DataResponse(data=summary)

@@ -731,7 +731,7 @@ def run_report(
     values = dict(parameters or {})
 
     if key == "initial_balance" and "minutes" in values:
-        kwargs["minutes"] = int(values["minutes"])  # type: ignore[arg-type]
+        kwargs["minutes"] = int(str(values["minutes"]))
     if key == "gap_fill" and "minimum_percent" in values:
         kwargs["minimum_percent"] = Decimal(str(values["minimum_percent"]))
 

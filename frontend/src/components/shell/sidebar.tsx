@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BookOpen,
+  CandlestickChart,
   FlaskConical,
   Gauge,
   Landmark,
@@ -45,6 +46,7 @@ const RESEARCH: NavItem[] = [
 const MANAGE: NavItem[] = [
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/imports", label: "Imports", icon: Upload },
+  { href: "/market-data", label: "Market data", icon: CandlestickChart },
   { href: "/billing", label: "Billing", icon: Landmark },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

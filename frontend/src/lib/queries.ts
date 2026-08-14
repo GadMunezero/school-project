@@ -39,6 +39,7 @@ export const queryKeys = {
   report: (key: string, params: QueryParams) => ["reports", key, params] as const,
   marketDataSources: ["market-data", "sources"] as const,
   coverage: (instrumentId: string) => ["market-data", "coverage", instrumentId] as const,
+  allCoverage: ["market-data", "coverage"] as const,
   candles: (params: QueryParams) => ["market-data", "candles", params] as const,
   notifications: (params?: QueryParams) => ["notifications", params ?? {}] as const,
   unreadCount: ["notifications", "unread"] as const,

@@ -68,6 +68,24 @@ class QualityReport:
         }
 
 
+@dataclass(slots=True)
+class IngestResult:
+    """What an ingest actually did.
+
+    ``written`` and ``skipped`` are kept apart because re-importing a file is normal — a user
+    topping up a series re-uploads an overlapping export — and reporting the parsed count as
+    though it were all newly stored would tell them their second import wrote thousands of bars
+    when it wrote none.
+    """
+
+    quality: QualityReport
+    written: int = 0
+    skipped: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"written": self.written, "skipped": self.skipped, "quality": self.quality.to_dict()}
+
+
 class MarketDataProvider(Protocol):
     """The interface a data source must satisfy.
 
@@ -276,7 +294,7 @@ class MarketDataService:
         timeframe: Timeframe,
         bars: Sequence[Bar],
         replace: bool = False,
-    ) -> QualityReport:
+    ) -> IngestResult:
         """Insert candles, skipping ones already present.
 
         Duplicate ``(source, instrument, timeframe, opened_at)`` rows are rejected by a unique
@@ -284,7 +302,7 @@ class MarketDataService:
         tops up a series instead of failing.
         """
         if not bars:
-            return QualityReport()
+            return IngestResult(quality=QualityReport())
 
         ordered = sorted(bars, key=lambda bar: bar.opened_at)
         report = self.validate(ordered, timeframe)
@@ -300,9 +318,13 @@ class MarketDataService:
         )
         existing = {row[0] for row in existing_result.all()}
 
+        written = 0
+        skipped = 0
         for bar in ordered:
             if bar.opened_at in existing and not replace:
+                skipped += 1
                 continue
+            written += 1
             self.session.add(
                 MarketData(
                     source_id=source.id,
@@ -318,7 +340,7 @@ class MarketDataService:
             )
         await self.session.flush()
         await self.refresh_coverage(source.id, instrument.id, timeframe, report)
-        return report
+        return IngestResult(quality=report, written=written, skipped=skipped)
 
     async def refresh_coverage(
         self,
@@ -466,6 +488,7 @@ def _s(value: Decimal) -> str:
 __all__ = [
     "CandleRequest",
     "DatabaseMarketDataProvider",
+    "IngestResult",
     "MarketDataProvider",
     "MarketDataService",
     "QualityReport",

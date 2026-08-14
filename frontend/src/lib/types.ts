@@ -586,6 +586,41 @@ export interface CoverageRow {
   quality: Record<string, unknown>;
 }
 
+/** What the importer found in an uploaded file, before any of it is stored. */
+export interface CandleInspection {
+  headers: string[];
+  delimiter: string;
+  total_rows: number;
+  preview: Record<string, string>[];
+  /** Only exact header matches; anything unmapped is the user's to choose. */
+  suggested_mapping: Partial<Record<CandleField, string>>;
+}
+
+export type CandleField = "timestamp" | "open" | "high" | "low" | "close" | "volume";
+
+export interface RejectedCandleRow {
+  row_number: number;
+  reason: string;
+  raw: Record<string, string>;
+}
+
+export interface CandleImportResult {
+  total_rows: number;
+  accepted: number;
+  rejected: number;
+  timeframe: Timeframe;
+  first_bar_at: string | null;
+  last_bar_at: string | null;
+  rejected_rows: RejectedCandleRow[];
+  dry_run: boolean;
+  instrument: { id: UUID; symbol: string };
+  /** Bars newly written. A re-import of an overlapping export writes none. */
+  stored: number;
+  already_stored?: number;
+  source?: { id: UUID; name: string };
+  quality?: Record<string, unknown>;
+}
+
 // --- backtesting -------------------------------------------------------------
 
 export interface Backtest {

@@ -127,7 +127,7 @@ async def main() -> int:
             db.add(source)
             await db.flush()
 
-        report = await service.ingest(
+        result = await service.ingest(
             source=source,
             instrument=instrument,
             timeframe=Timeframe(args.timeframe),
@@ -135,7 +135,8 @@ async def main() -> int:
         )
         await db.commit()
 
-    print(f"  stored. quality: {report.to_dict()}")
+    print(f"  wrote {result.written}, already stored {result.skipped}")
+    print(f"  quality: {result.quality.to_dict()}")
     await dispose_engine()
     return 0
 
