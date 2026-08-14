@@ -7,6 +7,7 @@ import Link from "next/link";
 
 import { api } from "@/lib/api";
 import {
+  formatClock,
   formatDate,
   formatInteger,
   formatPercent,
@@ -92,6 +93,8 @@ export default function ReportsPage() {
 
   const run = report.data;
   const session = run?.sessions.find((s) => s.session_date === selected) ?? null;
+  // Futures and FX carry their own trading day, which overrides the timezone choice below.
+  const boundary = run?.session_boundary ?? null;
 
   return (
     <>
@@ -150,9 +153,20 @@ export default function ReportsPage() {
           <Field
             label="Session day in"
             htmlFor="r-zone"
-            hint="Decides where a trading day starts."
+            hint={
+              boundary
+                ? `Set by the market: it opens ${formatClock(boundary.opens_at)} ${boundary.timezone}.`
+                : "Decides where a trading day starts."
+            }
           >
-            <Select id="r-zone" value={zone} onChange={(event) => setZone(event.target.value)}>
+            <Select
+              id="r-zone"
+              value={zone}
+              onChange={(event) => setZone(event.target.value)}
+              // This market defines its own trading day, so the choice would change nothing.
+              // Leaving it live would imply the number moves when it does not.
+              disabled={Boolean(boundary)}
+            >
               {ZONES.map((z) => (
                 <option key={z} value={z}>
                   {z}
@@ -235,7 +249,10 @@ export default function ReportsPage() {
 
               <p className="mt-3 text-2xs text-faint">
                 {run.instrument.symbol} · {run.timeframe} candles · sessions bounded by{" "}
-                {run.session_timezone} · {run.source.name}
+                {boundary
+                  ? `the ${formatClock(boundary.opens_at)} ${boundary.timezone} open`
+                  : run.session_timezone}{" "}
+                · {run.source.name}
               </p>
             </Card>
 

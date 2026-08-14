@@ -13,6 +13,8 @@ from decimal import Decimal
 
 import pytest
 
+from tradeloom.core.enums import AssetType
+from tradeloom.core.timeutil import boundary_for
 from tradeloom.engine.bars import Bar, BarSeries
 from tradeloom.engine.reports import (
     Outcome,
@@ -438,3 +440,164 @@ class TestConditions:
             assert len(condition["values"]) >= 2
         # This week never gaps, so "how it opened" collapses to a single value and is dropped.
         assert "gap" not in {c["key"] for c in conditions}
+
+
+class TestSessionBoundaries:
+    """Futures and FX trade through the evening into the next afternoon.
+
+    Their trading day is not a calendar day, so grouping by local date splits one session into an
+    evening fragment and a truncated remainder. That is not a cosmetic mislabelling: the remainder
+    reports an opening range measured from midnight, and the two fragments show a gap across what
+    was continuous trading.
+    """
+
+    #: Sunday 18:00 New York, in UTC. Mid-March, so ET is safely UTC-4 either side.
+    OPEN = datetime(2026, 3, 15, 22, 0, tzinfo=UTC)
+
+    def _overnight(self, hours: int = 23, start: datetime | None = None) -> list[Bar]:
+        """One CME-style session: 18:00 ET through 17:00 ET the next day."""
+        base = start or self.OPEN
+        return [bar(base + timedelta(hours=h), "100", "101", "99", "100") for h in range(hours)]
+
+    def test_a_session_spanning_two_dates_is_one_session(self) -> None:
+        boundary = boundary_for(AssetType.FUTURES)
+        sessions = group_sessions(
+            BarSeries(self._overnight()), "America/New_York", boundary=boundary
+        )
+
+        assert len(sessions) == 1
+        # Named for the day it ends on, which is the convention the exchanges use: the Monday
+        # session begins Sunday evening.
+        assert sessions[0].day.isoformat() == "2026-03-16"
+        assert sessions[0].day.strftime("%A") == "Monday"
+        assert len(sessions[0].bars) == 23
+
+    def test_the_boundary_does_not_move_with_the_viewer(self) -> None:
+        """A CME contract rolls at 18:00 New York whether you read it from Chicago or Tokyo."""
+        boundary = boundary_for(AssetType.FUTURES)
+        bars = BarSeries(self._overnight())
+
+        for timezone in ("America/New_York", "Asia/Tokyo", "Europe/London", "UTC"):
+            sessions = group_sessions(bars, timezone, boundary=boundary)
+            assert [s.day.isoformat() for s in sessions] == ["2026-03-16"], timezone
+
+    def test_a_market_without_a_boundary_still_groups_by_local_date(self) -> None:
+        """Equities close and reopen inside one calendar day; nothing here should change them."""
+        sessions = group_sessions(
+            BarSeries(self._overnight()),
+            "America/New_York",
+            boundary=boundary_for(AssetType.EQUITY),
+        )
+
+        assert [s.day.isoformat() for s in sessions] == ["2026-03-15", "2026-03-16"]
+
+    def test_the_opening_range_is_measured_from_the_real_open(self) -> None:
+        """The bug this fixes, stated as a number.
+
+        Split into calendar days, the first hour of the "Monday" fragment is midnight — six hours
+        into a session that opened at 18:00 — so the initial balance was measured against a range
+        the session had already been trading inside.
+        """
+        bars = [
+            bar(self.OPEN, "105", "110", "100", "106"),  # 18:00 ET: the true opening hour
+            *[bar(self.OPEN + timedelta(hours=h), "106", "108", "102", "107") for h in range(1, 8)],
+            bar(self.OPEN + timedelta(hours=8), "107", "115", "106", "114"),  # breaks up, 02:00 ET
+        ]
+        series = BarSeries(bars)
+
+        # Split at midnight, the session is cut in two and the second half measures its "opening"
+        # range from 00:00 — a range price had already been trading inside for six hours.
+        split = initial_balance(series, minutes=60, timezone="America/New_York", boundary=None)
+        assert len(split.sessions) == 2
+        assert {level.key: level.price for level in split.sessions[1].levels} == {
+            "ib_high": Decimal("108.00"),
+            "ib_low": Decimal("102.00"),
+        }
+
+        result = initial_balance(
+            series,
+            minutes=60,
+            timezone="America/New_York",
+            boundary=boundary_for(AssetType.FUTURES),
+        )
+
+        assert len(result.sessions) == 1
+        day = result.sessions[0]
+        assert day.outcome is Outcome.BROKE_UP_ONLY
+        # The real opening hour, 18:00 ET.
+        assert {level.key: level.price for level in day.levels} == {
+            "ib_high": Decimal("110.00"),
+            "ib_low": Decimal("100.00"),
+        }
+
+    def test_continuous_trading_is_not_reported_as_a_gap(self) -> None:
+        """A price move inside one session is not an overnight gap.
+
+        Split at midnight, the evening fragment's close and the next fragment's open sit either
+        side of the cut, and the report measures the distance between them as a gap. Nothing
+        gapped: those two bars are consecutive hours of continuous trading.
+        """
+        bars = [
+            # 18:00 through 23:00 ET, closing at 100.
+            *[bar(self.OPEN + timedelta(hours=h), "100", "101", "99", "100") for h in range(6)],
+            # 00:00 ET, five points higher — the very next hour of the same session.
+            bar(self.OPEN + timedelta(hours=6), "105", "106", "104", "105"),
+            bar(self.OPEN + timedelta(hours=7), "105", "106", "99", "100"),
+        ]
+        series = BarSeries(bars)
+
+        # Grouped by New York calendar date, those five points look like a gap that then filled.
+        split = gap_fill(series, timezone="America/New_York", boundary=None)
+        assert [s.outcome for s in split.sessions] == [Outcome.FILLED]
+        assert split.sessions[0].measures["gap_points"] == Decimal("5.00")
+        assert split.hit_rate == Decimal("100.00")
+
+        # Grouped by the trading day, there is one session, and a session cannot gap against
+        # itself — so there is nothing to measure rather than a fabricated 100% fill rate.
+        result = gap_fill(
+            series, timezone="America/New_York", boundary=boundary_for(AssetType.FUTURES)
+        )
+        assert len(result.sessions) == 0
+        assert result.hit_rate is None
+
+    def test_forex_rolls_an_hour_before_futures(self) -> None:
+        """17:00 ET, not 18:00 — a bar in that hour belongs to a different day for each."""
+        five_pm = datetime(2026, 3, 16, 21, 0, tzinfo=UTC)  # Monday 17:00 ET
+        bars = BarSeries([bar(five_pm, "100", "101", "99", "100")])
+
+        forex = group_sessions(bars, "UTC", boundary=boundary_for(AssetType.FOREX))
+        futures = group_sessions(bars, "UTC", boundary=boundary_for(AssetType.FUTURES))
+
+        assert forex[0].day.isoformat() == "2026-03-17"
+        assert futures[0].day.isoformat() == "2026-03-16"
+
+    def test_daily_bars_ignore_the_boundary(self) -> None:
+        """A daily bar already is a session; a roll time cannot apply to it."""
+        days = ["2026-03-16", "2026-03-17"]
+        bars = BarSeries(
+            [
+                bar(
+                    datetime.fromisoformat(f"{day}T00:00:00").replace(tzinfo=UTC),
+                    "100",
+                    "101",
+                    "99",
+                    "100",
+                )
+                for day in days
+            ]
+        )
+
+        sessions = group_sessions(
+            bars, "America/New_York", timeframe="1d", boundary=boundary_for(AssetType.FUTURES)
+        )
+        assert [s.day.isoformat() for s in sessions] == days
+
+    def test_only_the_asset_types_that_roll_have_a_boundary(self) -> None:
+        assert boundary_for(AssetType.FUTURES) is not None
+        assert boundary_for(AssetType.FOREX) is not None
+        assert boundary_for(AssetType.EQUITY) is None
+        assert boundary_for(AssetType.CRYPTO) is None
+        # Accepts the wire value too, and refuses to guess at anything it does not know.
+        assert boundary_for("futures") is not None
+        assert boundary_for("nonsense") is None
+        assert boundary_for(None) is None

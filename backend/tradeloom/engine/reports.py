@@ -34,7 +34,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from tradeloom.core.money import quantize_percent, quantize_price, safe_div
-from tradeloom.core.timeutil import local_date
+from tradeloom.core.timeutil import SessionBoundary, local_date
 from tradeloom.engine.bars import Bar, BarSeries
 
 #: Guard against a caller asking for a report over a decade of one-minute bars.
@@ -201,24 +201,39 @@ SESSION_TIMEFRAMES = frozenset({"1d", "1w"})
 
 
 def group_sessions(
-    series: BarSeries, timezone: str = "UTC", timeframe: str | None = None
+    series: BarSeries,
+    timezone: str = "UTC",
+    timeframe: str | None = None,
+    boundary: SessionBoundary | None = None,
 ) -> builtins.list[Session]:
     """Split a bar series into trading days.
 
-    For intraday bars the timezone matters and is not cosmetic: a US futures session opening at
-    18:00 New York belongs to the *next* trading day, and grouping in UTC would cut it in half.
+    Three rules, in order of precedence:
 
-    For daily and weekly bars it must not be applied at all. A daily bar carries a date, not a
-    moment — vendors publish it at midnight UTC — so converting that midnight into another zone
-    walks it back into the previous day. Real VIX data made this obvious: every session landed one
-    weekday early, producing Sunday sessions for a market that does not trade on Sundays and no
-    Friday sessions at all. So a daily bar is grouped by its own date, untouched.
+    * **Daily and weekly bars group by their own date.** A daily bar carries a date, not a moment
+      — vendors publish it at midnight UTC — so converting that midnight into another zone walks
+      it back into the previous day. Real VIX data made this obvious: every session landed one
+      weekday early, producing Sunday sessions for a market that does not trade on Sundays and no
+      Friday sessions at all.
+    * **A market with a trading-day boundary uses it.** Futures and FX open in the New York
+      evening and run through the next afternoon, so their session spans two calendar dates.
+      Grouping those by local date splits one session into an evening fragment and a truncated
+      remainder — which then reports an opening range measured from midnight, and a gap across
+      what was continuous trading. The boundary carries its own timezone, because a CME contract
+      rolls at 18:00 New York no matter where it is being viewed from.
+    * **Otherwise the local date is the trading day**, and the timezone genuinely matters: an
+      equity session at 09:30 New York is a different calendar day in Tokyo.
     """
     daily = timeframe in SESSION_TIMEFRAMES if timeframe else False
 
     grouped: dict[date, builtins.list[Bar]] = {}
     for bar in series:
-        day = bar.opened_at.date() if daily else local_date(bar.opened_at, timezone)
+        if daily:
+            day = bar.opened_at.date()
+        elif boundary is not None:
+            day = boundary.session_date(bar.opened_at)
+        else:
+            day = local_date(bar.opened_at, timezone)
         grouped.setdefault(day, []).append(bar)
 
     # Sorted by day: BarSeries guarantees ascending bars, but a caller could hand us a series
@@ -238,6 +253,7 @@ def initial_balance(
     timezone: str = "UTC",
     minutes: int = 60,
     timeframe: str | None = None,
+    boundary: SessionBoundary | None = None,
 ) -> ReportResult:
     """Does the opening range break one side, or both?
 
@@ -249,7 +265,7 @@ def initial_balance(
     only ever takes one side is a session where the first break tended to hold.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone, timeframe))
+    days = _limited(group_sessions(series, timezone, timeframe, boundary))
 
     for index, session in enumerate(days):
         context = session_context(days, index)
@@ -340,6 +356,7 @@ def gap_fill(
     timezone: str = "UTC",
     minimum_percent: Decimal = Decimal("0.1"),
     timeframe: str | None = None,
+    boundary: SessionBoundary | None = None,
 ) -> ReportResult:
     """When a session opens away from the last close, does it trade back to it?
 
@@ -348,7 +365,7 @@ def gap_fill(
     qualifying gap are bucketed as ``no_setup`` and left out of the percentage entirely.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone, timeframe))
+    days = _limited(group_sessions(series, timezone, timeframe, boundary))
 
     for index, session in enumerate(days):
         if index == 0:
@@ -419,7 +436,11 @@ def gap_fill(
 
 
 def previous_day_levels(
-    series: BarSeries, *, timezone: str = "UTC", timeframe: str | None = None
+    series: BarSeries,
+    *,
+    timezone: str = "UTC",
+    timeframe: str | None = None,
+    boundary: SessionBoundary | None = None,
 ) -> ReportResult:
     """Does today take out yesterday's high, yesterday's low, both, or neither?
 
@@ -427,7 +448,7 @@ def previous_day_levels(
     test in the module: the levels come from one session and the outcome from the next.
     """
     sessions: builtins.list[SessionResult] = []
-    days = _limited(group_sessions(series, timezone, timeframe))
+    days = _limited(group_sessions(series, timezone, timeframe, boundary))
 
     for index, session in enumerate(days):
         if index == 0:
@@ -716,6 +737,7 @@ def run_report(
     timezone: str = "UTC",
     parameters: Mapping[str, object] | None = None,
     timeframe: str | None = None,
+    boundary: SessionBoundary | None = None,
 ) -> ReportResult:
     """Run a registered report by key.
 
@@ -727,7 +749,11 @@ def run_report(
     if builder is None:
         raise KeyError(f"unknown report: {key}")
 
-    kwargs: dict[str, object] = {"timezone": timezone, "timeframe": timeframe}
+    kwargs: dict[str, object] = {
+        "timezone": timezone,
+        "timeframe": timeframe,
+        "boundary": boundary,
+    }
     values = dict(parameters or {})
 
     if key == "initial_balance" and "minutes" in values:

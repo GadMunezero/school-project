@@ -231,6 +231,19 @@ export function formatDate(iso: string | null | undefined, fallback = "—"): st
   }).format(date);
 }
 
+/**
+ * A wall-clock time of day, from an ISO time string: "18:00:00" → "18:00".
+ *
+ * Deliberately not passed through `Date`: this is a time in a named market's own zone, not an
+ * instant, and constructing a Date would reinterpret it in the viewer's timezone — the exact
+ * mistake that made daily bars land on the wrong weekday.
+ */
+export function formatClock(time: string | null | undefined, fallback = "—"): string {
+  if (!time) return fallback;
+  const match = /^(\d{2}):(\d{2})/.exec(time.trim());
+  return match ? `${match[1]}:${match[2]}` : fallback;
+}
+
 /** Human duration from seconds: "4m", "2h 15m", "3d 4h". */
 export function formatDuration(seconds: number | null | undefined, fallback = "—"): string {
   if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return fallback;

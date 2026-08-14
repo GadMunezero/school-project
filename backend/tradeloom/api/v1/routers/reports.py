@@ -17,6 +17,7 @@ from fastapi import APIRouter, Query
 from tradeloom.api.deps import Tenant
 from tradeloom.core.enums import Timeframe
 from tradeloom.core.errors import NotFoundError, UnprocessableStateError
+from tradeloom.core.timeutil import boundary_for
 from tradeloom.engine.reports import available_conditions, list_reports, run_report
 from tradeloom.schemas.common import DataResponse
 from tradeloom.services.catalog import InstrumentService
@@ -91,12 +92,18 @@ async def run(
     if minimum_percent is not None:
         parameters["minimum_percent"] = str(minimum_percent)
 
+    # Futures and FX trade through the New York evening into the next afternoon, so their trading
+    # day is not a calendar day. The boundary comes from the instrument, not from the request: a
+    # CME contract rolls at 18:00 ET regardless of which timezone the user is reading in.
+    boundary = boundary_for(instrument.asset_type)
+
     result = run_report(
         report_key,
         series,
         timezone=session_timezone,
         parameters=parameters,
         timeframe=timeframe.value,
+        boundary=boundary,
     )
     payload = result.to_dict()
     payload["instrument"] = {
@@ -106,6 +113,14 @@ async def run(
     }
     payload["timeframe"] = timeframe.value
     payload["session_timezone"] = session_timezone
+    # How sessions were cut. When a market has its own trading day the requested timezone did not
+    # affect the grouping, and the client has to say so rather than leave a control on screen that
+    # silently does nothing.
+    payload["session_boundary"] = (
+        {"opens_at": boundary.opens_at.isoformat(), "timezone": boundary.timezone}
+        if boundary is not None
+        else None
+    )
     payload["source"] = {"id": str(source.id), "name": source.name}
     # The client shows the rate differently when the sample is too small to lean on.
     payload["sufficient_sample"] = result.sample_size >= MIN_SESSIONS

@@ -13,9 +13,10 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,7 +39,7 @@ from tradeloom.core.enums import (
     UserStatus,
 )
 from tradeloom.core.money import quantize_money, quantize_price
-from tradeloom.core.timeutil import UTC, utcnow
+from tradeloom.core.timeutil import UTC, boundary_for, utcnow
 from tradeloom.engine.bars import Bar
 from tradeloom.models.identity import User
 from tradeloom.models.imports import ImportTemplate
@@ -249,6 +250,48 @@ BROKER_TEMPLATES = (
         "detection_headers": {"required": ["pair", "amount", "rate"]},
     },
 )
+
+
+#: The New York clock, which is where the futures and FX trading day is defined.
+_MARKET_ZONE = ZoneInfo("America/New_York")
+
+
+def _session_day(asset_type: AssetType, moment: datetime) -> date:
+    """The trading day a generated bar belongs to, by the same rule the reports use."""
+    boundary = boundary_for(asset_type)
+    if boundary is not None:
+        return boundary.session_date(moment)
+    return moment.astimezone(_MARKET_ZONE).date()
+
+
+def _is_open(asset_type: AssetType, moment: datetime) -> bool:
+    """Whether an intraday bar should exist at this instant.
+
+    Generated data that ignores real trading hours quietly makes the product untestable: futures
+    given a 09:30-16:00 shape never cross their 18:00 open, so the session-boundary handling looks
+    correct in the demo workspace whether or not it is. These hours are approximations — no
+    holiday calendar, no half days — but they put bars on the right side of the boundaries that
+    the reports depend on.
+    """
+    if asset_type is AssetType.CRYPTO:
+        return True
+
+    local = moment.astimezone(_MARKET_ZONE)
+    weekday = local.weekday()  # Monday is 0, Sunday is 6.
+
+    if asset_type in (AssetType.FUTURES, AssetType.FOREX, AssetType.CFD):
+        opens_at = 18 if asset_type is AssetType.FUTURES else 17
+        if weekday == 4 and local.hour >= 17:  # Friday close.
+            return False
+        if weekday == 5:  # All day Saturday.
+            return False
+        if weekday == 6:  # Sunday, until the week reopens in the evening.
+            return local.hour >= opens_at
+        # Futures take an hour's maintenance break between the close and the next open.
+        return not (asset_type is AssetType.FUTURES and local.hour == 17)
+
+    # Equities, ETFs, indices and options: the US cash session on weekdays.
+    return weekday < 5 and 9 <= local.hour <= 15
 
 
 class DemoSeeder:
@@ -513,16 +556,13 @@ class DemoSeeder:
         bars: list[Bar] = []
         moment = start
         while moment < end:
-            weekday = moment.weekday()
-            is_market = spec.asset_type is AssetType.CRYPTO or weekday < 5
-            if not is_market:
-                moment += step
-                continue
-            if (
-                timeframe is Timeframe.H1
-                and spec.asset_type is not AssetType.CRYPTO
-                and not (13 <= moment.hour <= 20)  # ~US cash session in UTC
-            ):
+            # Daily bars carry a date, so only the weekend matters. Intraday bars have to respect
+            # the market's actual hours, which differ by asset type.
+            if timeframe is Timeframe.D1:
+                if spec.asset_type is not AssetType.CRYPTO and moment.weekday() >= 5:
+                    moment += step
+                    continue
+            elif not _is_open(spec.asset_type, moment):
                 moment += step
                 continue
 
@@ -533,10 +573,15 @@ class DemoSeeder:
             # is continuous, every session opens exactly where the previous one closed, and the
             # gap-fill report correctly reports that no gap ever occurred — true, but it leaves
             # the demo workspace unable to demonstrate the feature at all.
+            #
+            # The gap goes at the *session* boundary, not at midnight. A futures session runs
+            # from 18:00 through the next afternoon, so a jump at midnight would land mid-session
+            # and manufacture exactly the phantom gap the reports were fixed to stop reporting.
             if (
                 bars
                 and spec.asset_type is not AssetType.CRYPTO
-                and moment.date() != bars[-1].opened_at.date()
+                and _session_day(spec.asset_type, moment)
+                != _session_day(spec.asset_type, bars[-1].opened_at)
                 and rng.random() < 0.35
             ):
                 open_price = max(0.01, price * (1 + rng.gauss(0, volatility * 2.5)))

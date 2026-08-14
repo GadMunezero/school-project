@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   formatBytes,
+  formatClock,
   formatDecimal,
   formatDuration,
   formatInteger,
@@ -180,5 +181,26 @@ describe("misc", () => {
     expect(humanise("stop_limit")).toBe("Stop limit");
     expect(humanise(null)).toBe("—");
     expect(humanise(null, "None")).toBe("None");
+  });
+});
+
+describe("formatClock", () => {
+  it("keeps a market's own wall-clock time", () => {
+    expect(formatClock("18:00:00")).toBe("18:00");
+    expect(formatClock("17:00")).toBe("17:00");
+    expect(formatClock("09:30:00")).toBe("09:30");
+  });
+
+  it("does not shift the time into the viewer's timezone", () => {
+    // The whole point: 18:00 in New York must read as 18:00 wherever it is displayed. Parsing
+    // this through Date would reinterpret it and print some other hour.
+    expect(formatClock("18:00:00")).toBe("18:00");
+  });
+
+  it("falls back rather than printing nonsense", () => {
+    expect(formatClock(null)).toBe("—");
+    expect(formatClock("")).toBe("—");
+    expect(formatClock("not a time")).toBe("—");
+    expect(formatClock(undefined, "n/a")).toBe("n/a");
   });
 });

@@ -115,6 +115,53 @@ test.describe("edge reports", () => {
       expect(withLevels.levels.map((l) => l.key).sort()).toEqual(["prior_high", "prior_low"]);
     }
   });
+
+  test("a market with its own trading day says so instead of offering a dead control", async ({
+    authedPage: page,
+  }) => {
+    await page.goto("/reports");
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    // MQ1 is the seeded futures contract; its session opens 18:00 New York the evening before.
+    const options = await page.locator("#r-instrument option").allTextContents();
+    test.skip(!options.includes("MQ1"), "no futures instrument in the demo workspace");
+
+    await page.getByLabel("Instrument").selectOption({ label: "MQ1" });
+    await expect.poll(async () => (await currentRun(page))?.instrument?.symbol).toBe("MQ1");
+
+    const run = await currentRun(page);
+    expect(run!.session_boundary).toEqual({
+      opens_at: "18:00:00",
+      timezone: "America/New_York",
+    });
+
+    // The timezone would change nothing here, so the page must not present it as a choice.
+    await expect(page.locator("#r-zone")).toBeDisabled();
+    await expect(page.getByText(/opens 18:00 America\/New_York/)).toBeVisible();
+    await expect(page.getByText(/sessions bounded by the 18:00 America\/New_York open/)).toBeVisible();
+
+    // Futures never open on a Saturday. A session landing there is the grouping bug returning.
+    const weekend = run!.sessions.filter((s) => {
+      const day = new Date(`${s.session_date}T00:00:00Z`).getUTCDay();
+      return day === 6;
+    });
+    expect(weekend).toEqual([]);
+  });
+
+  test("an equity still follows the timezone the user picked", async ({ authedPage: page }) => {
+    await page.goto("/reports");
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    const options = await page.locator("#r-instrument option").allTextContents();
+    test.skip(!options.includes("NVLX"), "no equity instrument in the demo workspace");
+
+    await page.getByLabel("Instrument").selectOption({ label: "NVLX" });
+    await expect.poll(async () => (await currentRun(page))?.instrument?.symbol).toBe("NVLX");
+
+    // Equities trade inside one calendar day, so the control stays live.
+    expect((await currentRun(page))!.session_boundary).toBeNull();
+    await expect(page.locator("#r-zone")).toBeEnabled();
+  });
 });
 
 interface Run {
@@ -125,6 +172,9 @@ interface Run {
   headline_outcomes: string[];
   buckets: Record<string, number>;
   sessions: { session_date: string; levels: { key: string; label: string }[] }[];
+  instrument: { symbol: string };
+  /** Non-null only for markets whose trading day is not a calendar day. */
+  session_boundary: { opens_at: string; timezone: string } | null;
 }
 
 /**

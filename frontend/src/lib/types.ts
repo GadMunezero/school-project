@@ -890,6 +890,13 @@ export interface ReportRun {
   instrument: { id: UUID; symbol: string; name: string };
   timeframe: Timeframe;
   session_timezone: string;
+  /**
+   * The market's own trading day, when it has one. Futures and FX open in the New York evening
+   * and run through the next afternoon, so their sessions are cut by this rather than by the
+   * requested timezone — which the UI must say out loud rather than leave a control that does
+   * nothing.
+   */
+  session_boundary: { opens_at: string; timezone: string } | null;
   source: { id: UUID; name: string };
   /** False when the sample is too small to lean on; the UI says so rather than hiding it. */
   sufficient_sample: boolean;
