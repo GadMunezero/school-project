@@ -90,6 +90,10 @@ class SessionResult:
     window_end: datetime
     #: Report-specific measurements, already quantised for display.
     measures: Mapping[str, Decimal | None] = field(default_factory=dict)
+    #: What the market looked like *going into* this session — the weekday, whether it gapped,
+    #: which way the previous session closed. Every value is knowable before the session opens,
+    #: which is what makes splitting a rate by them a fair question rather than hindsight.
+    context: Mapping[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -100,6 +104,7 @@ class SessionResult:
             "window_start": self.window_start.isoformat(),
             "window_end": self.window_end.isoformat(),
             "measures": {k: (str(v) if v is not None else None) for k, v in self.measures.items()},
+            "context": dict(self.context),
         }
 
 
@@ -228,8 +233,10 @@ def initial_balance(
     only ever takes one side is a session where the first break tended to hold.
     """
     sessions: builtins.list[SessionResult] = []
+    days = _limited(group_sessions(series, timezone))
 
-    for session in _limited(group_sessions(series, timezone)):
+    for index, session in enumerate(days):
+        context = session_context(days, index)
         window_end = session.opened_at + timedelta(minutes=minutes)
         window = [bar for bar in session.bars if bar.opened_at < window_end]
         rest = [bar for bar in session.bars if bar.opened_at >= window_end]
@@ -245,6 +252,7 @@ def initial_balance(
                     window_start=session.opened_at,
                     window_end=session.closed_at,
                     measures={"reason": None},
+                    context=context,
                 )
             )
             continue
@@ -284,6 +292,7 @@ def initial_balance(
                     "session_range": quantize_price(session.high - session.low),
                     "extension": _extension(session, ib_high, ib_low),
                 },
+                context=context,
             )
         )
 
@@ -328,6 +337,7 @@ def gap_fill(
         if index == 0:
             continue  # No prior close to gap from.
 
+        context = session_context(days, index)
         previous = days[index - 1]
         prior_close = quantize_price(previous.close)
         open_price = quantize_price(session.open)
@@ -345,6 +355,7 @@ def gap_fill(
                     window_start=previous.opened_at,
                     window_end=session.closed_at,
                     measures={"gap_percent": quantize_percent(gap_percent or Decimal(0))},
+                    context=context,
                 )
             )
             continue
@@ -374,6 +385,7 @@ def gap_fill(
                     "gap_percent": quantize_percent(gap_percent),
                     "gap_points": quantize_price(gap),
                 },
+                context=context,
             )
         )
 
@@ -402,6 +414,7 @@ def previous_day_levels(series: BarSeries, *, timezone: str = "UTC") -> ReportRe
         if index == 0:
             continue
 
+        context = session_context(days, index)
         previous = days[index - 1]
         prior_high = quantize_price(previous.high)
         prior_low = quantize_price(previous.low)
@@ -437,6 +450,7 @@ def previous_day_levels(series: BarSeries, *, timezone: str = "UTC") -> ReportRe
                     "prior_range": quantize_price(prior_high - prior_low),
                     "session_range": quantize_price(session.high - session.low),
                 },
+                context=context,
             )
         )
 
@@ -452,6 +466,148 @@ def previous_day_levels(series: BarSeries, *, timezone: str = "UTC") -> ReportRe
 def _limited(sessions: Sequence[Session]) -> Sequence[Session]:
     """Keep the most recent window when a caller asks for more history than is sensible."""
     return sessions[-MAX_SESSIONS:] if len(sessions) > MAX_SESSIONS else sessions
+
+
+# ---------------------------------------------------------------------------
+# Conditions
+# ---------------------------------------------------------------------------
+
+WEEKDAY_KEYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+#: How large an open-to-previous-close move has to be before the session counts as gapping.
+GAP_THRESHOLD_PERCENT = Decimal("0.1")
+
+
+def session_context(days: Sequence[Session], index: int) -> dict[str, str]:
+    """Describe what was already known when a session opened.
+
+    Everything here is drawn from the *previous* session and the calendar. Nothing reads the
+    session's own bars, which is what makes it legitimate to split a hit rate by these values:
+    a trader standing at the open would have known every one of them.
+    """
+    session = days[index]
+    context: dict[str, str] = {"weekday": WEEKDAY_KEYS[session.day.weekday()]}
+
+    if index == 0:
+        return context
+
+    previous = days[index - 1]
+    prior_close = previous.close
+
+    # Which way the previous session resolved.
+    context["prior_day"] = "prior_up" if previous.close >= previous.open else "prior_down"
+
+    # Whether this one opened away from it. The open is the first print of the session, so it is
+    # known at the moment the session begins — this is not a peek at how the day went.
+    move = safe_div(abs(session.open - prior_close) * 100, prior_close)
+    if move is None or move < GAP_THRESHOLD_PERCENT:
+        context["gap"] = "flat_open"
+    else:
+        context["gap"] = "gap_up" if session.open > prior_close else "gap_down"
+
+    return context
+
+
+@dataclass(frozen=True, slots=True)
+class ConditionValue:
+    """One slice of a report: the sessions sharing a context value, and their own rate."""
+
+    value: str
+    label: str
+    sessions: tuple[SessionResult, ...]
+    headline_outcomes: tuple[Outcome, ...]
+
+    @property
+    def counted(self) -> builtins.list[SessionResult]:
+        return [s for s in self.sessions if s.outcome not in EXCLUDED_FROM_RATE]
+
+    @property
+    def sample_size(self) -> int:
+        return len(self.counted)
+
+    @property
+    def hit_rate(self) -> Decimal | None:
+        hits = sum(1 for s in self.counted if s.outcome in self.headline_outcomes)
+        ratio = safe_div(hits * 100, len(self.counted))
+        return quantize_percent(ratio) if ratio is not None else None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "value": self.value,
+            "label": self.label,
+            "hit_rate": str(self.hit_rate) if self.hit_rate is not None else None,
+            "sample_size": self.sample_size,
+            "session_dates": [s.session_date.isoformat() for s in self.counted],
+        }
+
+
+CONDITION_LABELS: dict[str, dict[str, str]] = {
+    "weekday": {key: key.capitalize() for key in WEEKDAY_KEYS},
+    "gap": {
+        "gap_up": "Opened above the prior close",
+        "gap_down": "Opened below the prior close",
+        "flat_open": "Opened at the prior close",
+    },
+    "prior_day": {"prior_up": "Prior session closed up", "prior_down": "Prior session closed down"},
+}
+
+CONDITION_NAMES = {
+    "weekday": "Day of week",
+    "gap": "How it opened",
+    "prior_day": "Previous session",
+}
+
+
+def split_by(result: ReportResult, condition: str) -> builtins.list[ConditionValue]:
+    """Break a report's rate down by one piece of pre-session context.
+
+    This is where a report stops being trivia. A flat "breaks one side 40% of the time" is a fact
+    about the average day; the same report split by how the session opened is a fact you can act
+    on — provided you read the sample size next to it, which is why every slice carries its own.
+    """
+    if condition not in CONDITION_LABELS:
+        raise KeyError(f"unknown condition: {condition}")
+
+    grouped: dict[str, builtins.list[SessionResult]] = {}
+    for session in result.sessions:
+        value = session.context.get(condition)
+        if value is None:
+            continue  # The first session has no prior day; it cannot be classified.
+        grouped.setdefault(value, []).append(session)
+
+    labels = CONDITION_LABELS[condition]
+    order = list(labels.keys())
+    return [
+        ConditionValue(
+            value=value,
+            label=labels.get(value, value),
+            sessions=tuple(sessions),
+            headline_outcomes=result.headline_outcomes,
+        )
+        for value, sessions in sorted(
+            grouped.items(),
+            key=lambda item: order.index(item[0]) if item[0] in order else len(order),
+        )
+    ]
+
+
+def available_conditions(result: ReportResult) -> builtins.list[dict[str, object]]:
+    """Every condition that actually applies to this run, already split."""
+    output: builtins.list[dict[str, object]] = []
+    for condition, name in CONDITION_NAMES.items():
+        values = split_by(result, condition)
+        # A condition that puts every session in one bucket explains nothing; drop it rather than
+        # render a "breakdown" with a single row identical to the headline.
+        if len(values) < 2:
+            continue
+        output.append(
+            {
+                "key": condition,
+                "name": name,
+                "values": [value.to_dict() for value in values],
+            }
+        )
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -563,17 +719,23 @@ def run_report(
 
 
 __all__ = [
+    "CONDITION_LABELS",
+    "CONDITION_NAMES",
     "MAX_SESSIONS",
+    "ConditionValue",
     "Level",
     "Outcome",
     "ReportResult",
     "ReportSpec",
     "Session",
     "SessionResult",
+    "available_conditions",
     "gap_fill",
     "group_sessions",
     "initial_balance",
     "list_reports",
     "previous_day_levels",
     "run_report",
+    "session_context",
+    "split_by",
 ]

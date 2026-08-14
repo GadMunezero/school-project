@@ -16,12 +16,15 @@ import pytest
 from tradeloom.engine.bars import Bar, BarSeries
 from tradeloom.engine.reports import (
     Outcome,
+    available_conditions,
     gap_fill,
     group_sessions,
     initial_balance,
     list_reports,
     previous_day_levels,
     run_report,
+    session_context,
+    split_by,
 )
 
 
@@ -295,3 +298,105 @@ class TestRegistry:
         assert day["window_start"] < day["window_end"]
         assert len(day["levels"]) == 2
         assert all(isinstance(level["price"], str) for level in day["levels"])
+
+
+class TestConditions:
+    """Splitting a rate by context is only fair if the context was knowable at the open."""
+
+    def _week(self) -> BarSeries:
+        """Five sessions, Monday to Friday, each opening exactly at the previous close."""
+        bars: list[Bar] = []
+        for day in ("2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06"):
+            bars += session_bars(
+                day,
+                [
+                    (0, "100", "110", "100", "105"),
+                    (60, "105", "112", "99", "104"),
+                    (120, "104", "111", "99", "100"),
+                ],
+            )
+        return BarSeries(bars)
+
+    def test_context_never_reads_the_session_it_describes(self) -> None:
+        """Every context value must come from the calendar or the previous session."""
+        days = group_sessions(self._week(), "UTC")
+
+        # Rewrite the last session to be wildly different; its context must not change, because
+        # nothing in it is derived from its own bars.
+        before = session_context(days, 3)
+        after = session_context([*days[:3], days[3]], 3)
+        assert before == after
+
+    def test_the_first_session_has_only_calendar_context(self) -> None:
+        days = group_sessions(self._week(), "UTC")
+        context = session_context(days, 0)
+
+        # No prior session exists, so there is nothing to say about gaps or yesterday.
+        assert context == {"weekday": "monday"}
+
+    def test_weekday_is_the_local_calendar_day(self) -> None:
+        days = group_sessions(self._week(), "UTC")
+        assert [session_context(days, i)["weekday"] for i in range(5)] == [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+        ]
+
+    def test_a_session_opening_at_the_prior_close_is_not_a_gap(self) -> None:
+        days = group_sessions(self._week(), "UTC")
+        assert session_context(days, 1)["gap"] == "flat_open"
+
+    def test_gap_direction_compares_the_open_with_the_prior_close(self) -> None:
+        first = session_bars("2026-03-02", [(0, "100", "101", "99", "100")])
+        up = session_bars("2026-03-03", [(0, "108", "109", "107", "108")])
+        down = session_bars("2026-03-04", [(0, "90", "91", "89", "90")])
+        days = group_sessions(BarSeries(first + up + down), "UTC")
+
+        assert session_context(days, 1)["gap"] == "gap_up"
+        assert session_context(days, 2)["gap"] == "gap_down"
+
+    def test_prior_day_direction_uses_the_previous_session_only(self) -> None:
+        rising = session_bars("2026-03-02", [(0, "100", "110", "99", "108")])
+        falling = session_bars("2026-03-03", [(0, "108", "109", "95", "96")])
+        third = session_bars("2026-03-04", [(0, "96", "97", "95", "96")])
+        days = group_sessions(BarSeries(rising + falling + third), "UTC")
+
+        assert session_context(days, 1)["prior_day"] == "prior_up"
+        assert session_context(days, 2)["prior_day"] == "prior_down"
+
+    def test_splitting_partitions_the_sessions_without_losing_any(self) -> None:
+        result = previous_day_levels(self._week(), timezone="UTC")
+        values = split_by(result, "weekday")
+
+        # Every classifiable session lands in exactly one slice.
+        counted = sum(len(value.sessions) for value in values)
+        classifiable = sum(1 for s in result.sessions if "weekday" in s.context)
+        assert counted == classifiable
+
+    def test_each_slice_computes_its_own_rate_over_its_own_sample(self) -> None:
+        result = previous_day_levels(self._week(), timezone="UTC")
+        for value in split_by(result, "weekday"):
+            hits = sum(1 for s in value.counted if s.outcome in result.headline_outcomes)
+            if value.sample_size == 0:
+                # An empty slice has no rate, rather than a rate of zero.
+                assert value.hit_rate is None
+            else:
+                expected = Decimal(hits * 100) / Decimal(value.sample_size)
+                assert abs(value.hit_rate - expected) < Decimal("0.01")
+
+    def test_an_unknown_condition_is_refused(self) -> None:
+        result = previous_day_levels(self._week(), timezone="UTC")
+        with pytest.raises(KeyError):
+            split_by(result, "phase_of_the_moon")
+
+    def test_a_condition_with_one_value_is_not_offered_as_a_breakdown(self) -> None:
+        """A split where every session lands in one bucket repeats the headline and explains nothing."""
+        result = previous_day_levels(self._week(), timezone="UTC")
+        conditions = available_conditions(result)
+
+        for condition in conditions:
+            assert len(condition["values"]) >= 2
+        # This week never gaps, so "how it opened" collapses to a single value and is dropped.
+        assert "gap" not in {c["key"] for c in conditions}

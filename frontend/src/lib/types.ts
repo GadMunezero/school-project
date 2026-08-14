@@ -826,6 +826,21 @@ export interface ReportSession {
   measures: Record<string, DecimalString>;
 }
 
+export interface ConditionValue {
+  value: string;
+  label: string;
+  /** Null when no session in this slice qualified — an undefined rate, never zero. */
+  hit_rate: DecimalString;
+  sample_size: number;
+  session_dates: string[];
+}
+
+export interface ReportCondition {
+  key: string;
+  name: string;
+  values: ConditionValue[];
+}
+
 export interface ReportRun {
   key: string;
   name: string;
@@ -844,6 +859,8 @@ export interface ReportRun {
   /** False when the sample is too small to lean on; the UI says so rather than hiding it. */
   sufficient_sample: boolean;
   minimum_sample: number;
+  /** The same rate split by what was knowable before each session opened. */
+  conditions: ReportCondition[];
 }
 
 // --- platform ----------------------------------------------------------------

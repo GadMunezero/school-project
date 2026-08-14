@@ -17,7 +17,7 @@ from fastapi import APIRouter, Query
 from tradeloom.api.deps import Tenant
 from tradeloom.core.enums import Timeframe
 from tradeloom.core.errors import NotFoundError, UnprocessableStateError
-from tradeloom.engine.reports import list_reports, run_report
+from tradeloom.engine.reports import available_conditions, list_reports, run_report
 from tradeloom.schemas.common import DataResponse
 from tradeloom.services.catalog import InstrumentService
 from tradeloom.services.market_data import MarketDataService
@@ -103,6 +103,9 @@ async def run(
     payload["source"] = {"id": str(source.id), "name": source.name}
     # The client shows the rate differently when the sample is too small to lean on.
     payload["sufficient_sample"] = result.sample_size >= MIN_SESSIONS
+    # The same rate, split by what was already knowable when each session opened. A flat headline
+    # describes the average day; these describe the days you can actually recognise in advance.
+    payload["conditions"] = available_conditions(result)
     payload["minimum_sample"] = MIN_SESSIONS
     return DataResponse(data=payload)
 

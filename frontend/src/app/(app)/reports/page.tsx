@@ -6,11 +6,19 @@ import { BarChart3, ExternalLink } from "lucide-react";
 import Link from "next/link";
 
 import { api } from "@/lib/api";
-import { formatDate, formatInteger, formatPercent, formatPrice, humanise } from "@/lib/format";
+import {
+  formatDate,
+  formatInteger,
+  formatPercent,
+  formatPrice,
+  humanise,
+  type DecimalString,
+} from "@/lib/format";
 import { queryKeys } from "@/lib/queries";
 import type {
   CandleResponse,
   Instrument,
+  ReportCondition,
   ReportRun,
   ReportSession,
   ReportSpec,
@@ -277,6 +285,13 @@ export default function ReportsPage() {
                 </table>
               </div>
             </Card>
+
+            <ConditionalBreakdown
+              conditions={run.conditions}
+              overall={run.hit_rate}
+              minimumSample={run.minimum_sample}
+              onPick={(dates) => setSelected(dates[0] ?? null)}
+            />
           </div>
 
           <SessionInspector
@@ -388,6 +403,91 @@ function SessionInspector({
       <p className="mt-3 text-2xs text-faint">
         These are the exact levels the report measured against, and these are the candles it read.
         Nothing here is recomputed in the browser.
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * The same rate, split by what was already knowable when each session opened.
+ *
+ * A flat headline describes the average day. These describe days you can recognise in advance —
+ * which is the difference between a statistic that is interesting and one you can act on. Every
+ * slice carries its own sample size, and thin slices are dimmed rather than hidden, because a
+ * two-session slice showing 100% is the most misleading thing this page could render.
+ */
+function ConditionalBreakdown({
+  conditions,
+  overall,
+  minimumSample,
+  onPick,
+}: {
+  conditions: ReportCondition[];
+  overall: DecimalString;
+  minimumSample: number;
+  onPick: (dates: string[]) => void;
+}) {
+  if (!conditions.length) return null;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Does the context change it?"
+        description={`Overall the rate is ${formatPercent(overall)}. Split by what was true before each session opened, it looks like this.`}
+      />
+
+      <div className="grid gap-5 sm:grid-cols-2">
+        {conditions.map((condition) => (
+          <div key={condition.key}>
+            <p className="mb-2 text-2xs font-semibold uppercase tracking-wide text-faint">
+              {condition.name}
+            </p>
+            <div className="space-y-1.5">
+              {condition.values.map((value) => {
+                const thin = value.sample_size < minimumSample;
+                const rate = Number(value.hit_rate ?? 0);
+                return (
+                  <button
+                    key={value.value}
+                    type="button"
+                    onClick={() => onPick(value.session_dates)}
+                    disabled={value.session_dates.length === 0}
+                    title={
+                      thin
+                        ? `Only ${value.sample_size} sessions — too few to lean on`
+                        : `${value.sample_size} sessions`
+                    }
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors",
+                      "hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50",
+                      thin && "opacity-60",
+                    )}
+                  >
+                    <span className="w-28 shrink-0 truncate text-muted">{value.label}</span>
+                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-raised">
+                      <span
+                        className={cn("block h-full rounded-full", thin ? "bg-faint" : "bg-accent")}
+                        style={{ width: `${Math.min(Math.max(rate, 0), 100)}%` }}
+                      />
+                    </span>
+                    <span className="tnum w-14 shrink-0 text-right font-medium">
+                      {formatPercent(value.hit_rate)}
+                    </span>
+                    <span className="tnum w-8 shrink-0 text-right text-2xs text-faint">
+                      {value.sample_size}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 text-2xs text-faint">
+        The trailing number is how many sessions each slice contains. Slices below {minimumSample}{" "}
+        are dimmed — a high rate over three sessions is a coincidence with a percentage sign on it.
+        Selecting a slice opens its first session below.
       </p>
     </Card>
   );
