@@ -25,6 +25,7 @@ from typing import Any
 
 from tradeloom.core.enums import Direction, OrderSide, OrderType
 from tradeloom.core.money import ZERO, quantize_money
+from tradeloom.core.timeutil import trading_day
 from tradeloom.engine.bars import BarSeries, BarWindow
 from tradeloom.engine.broker import BrokerSimulator
 from tradeloom.engine.config import BacktestConfig
@@ -276,6 +277,12 @@ class BacktestRunner:
         position = self.portfolio.position
         sample = EquitySample(
             timestamp=bar.opened_at,
+            # Daily and monthly returns bucket on this. A futures bar at 19:00 New York belongs to
+            # the next session, so grouping it by calendar date would split one trading day across
+            # two rows and report a return for a day that had already closed.
+            trading_day=trading_day(
+                bar.opened_at, self.config.asset_type, self.config.session.timezone
+            ),
             equity=quantize_money(self.portfolio.equity(bar.close)),
             cash=self.portfolio.cash(),
             realized_pnl=self.portfolio.realized_pnl,

@@ -234,6 +234,9 @@ class ReplayService:
             symbol=instrument.symbol,
             initial_capital=record.initial_capital,
             currency=record.currency,
+            # Replay and backtest are meant to agree bar for bar, so the trading day a trade is
+            # booked to has to come from the same place in both.
+            asset_type=instrument.asset_type,
             contract_multiplier=instrument.contract_multiplier,
             tick_size=instrument.tick_size,
             lot_size=instrument.lot_size,

@@ -364,6 +364,8 @@ def _to_sim_trade(sequence: int, trade: Trade) -> SimTrade:
     """Map a journal trade onto the engine's trade shape so one analyzer serves both."""
     return SimTrade(
         sequence=sequence,
+        # Carried so the weekday and monthly breakdowns use this market's trading day.
+        asset_type=trade.asset_type,
         direction=trade.direction,
         entry_timestamp=ensure_aware(trade.entry_timestamp),
         exit_timestamp=ensure_aware(trade.exit_timestamp) if trade.exit_timestamp else None,

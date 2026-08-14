@@ -363,6 +363,8 @@ class BacktestService:
             symbol=instrument.symbol,
             initial_capital=backtest.initial_capital,
             currency=backtest.currency,
+            # Decides the trading day for the weekday, monthly and daily breakdowns.
+            asset_type=instrument.asset_type,
             contract_multiplier=instrument.contract_multiplier,
             tick_size=instrument.tick_size,
             lot_size=instrument.lot_size,

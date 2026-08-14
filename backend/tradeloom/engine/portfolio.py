@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from tradeloom.core.enums import Direction
+from tradeloom.core.enums import AssetType, Direction
 from tradeloom.core.money import ONE, ZERO, is_zero, mul, quantize_money, quantize_price, safe_div
 from tradeloom.core.money import quantize_quantity as qq
 
@@ -56,6 +56,10 @@ class SimTrade:
     exit_reason: str | None = None
     equity_after: Decimal | None = None
     entry_count: int = 1
+    #: The market this trade was in, which decides what "day" means for it. Futures and FX roll in
+    #: the New York evening, so a trade entered Sunday night belongs to Monday's session — and a
+    #: weekday breakdown that says "Sunday" is describing a session that does not exist.
+    asset_type: AssetType | None = None
 
 
 @dataclass(slots=True)

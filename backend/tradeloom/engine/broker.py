@@ -339,6 +339,8 @@ class BrokerSimulator:
 
         trade = SimTrade(
             sequence=self._trade_sequence,
+            # Carried so the breakdowns know which market's trading day applies to this trade.
+            asset_type=self.config.asset_type,
             direction=position.direction,
             entry_timestamp=position.opened_at,
             exit_timestamp=timestamp,

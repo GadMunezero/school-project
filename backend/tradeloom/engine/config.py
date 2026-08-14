@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from tradeloom.core.enums import (
+    AssetType,
     CommissionModelType,
     ExecutionModelType,
     IntrabarPriority,
@@ -281,6 +282,9 @@ class BacktestConfig:
     symbol: str
     initial_capital: Decimal
     currency: str = "USD"
+    #: The market being traded. Decides the trading day for the weekday, monthly and daily
+    #: breakdowns — a futures run entered Sunday evening belongs to Monday's session.
+    asset_type: AssetType | None = None
     contract_multiplier: Decimal = ONE
     tick_size: Decimal = Decimal("0.01")
     #: Smallest tradable increment; sizes are floored to a multiple of this.
@@ -307,6 +311,7 @@ class BacktestConfig:
             "symbol": self.symbol,
             "initial_capital": str(self.initial_capital),
             "currency": self.currency,
+            "asset_type": self.asset_type.value if self.asset_type else None,
             "contract_multiplier": str(self.contract_multiplier),
             "tick_size": str(self.tick_size),
             "lot_size": str(self.lot_size),

@@ -12,6 +12,7 @@ from decimal import Decimal
 import pytest
 
 from tradeloom.core.enums import (
+    AssetType,
     CommissionModelType,
     ExecutionModelType,
     IntrabarPriority,
@@ -23,6 +24,7 @@ from tradeloom.engine.config import (
     BacktestConfig,
     CommissionConfig,
     RiskConfig,
+    SessionConfig,
     SlippageConfig,
     SpreadConfig,
 )
@@ -491,3 +493,98 @@ class TestEmptyAndEdgeCases:
         trade = result.trades[0]
         assert trade.direction.value == "short"
         assert trade.net_pnl == D("1000")  # 100 shares * 10 points
+
+
+class TestBacktestTradingDay:
+    """A backtest on futures must report the session's day, not the calendar's.
+
+    The instrument is known for the whole run, so every trade and every equity sample can say
+    which trading day it belongs to. Without that, a run on a contract that opens at 18:00 New
+    York reports entries on Sunday — a session the exchange never held — and splits each session's
+    return across two rows of the daily table.
+    """
+
+    #: Sunday 19:00 New York, which is Monday's futures session. March, so ET is UTC-4.
+    SUNDAY_EVENING = datetime(2026, 3, 15, 23, 0, tzinfo=UTC)
+
+    def _hourly(self, count: int = 6) -> BarSeries:
+        # A gently rising walk; the range has to contain both ends or Bar refuses the candle.
+        return BarSeries(
+            [
+                Bar(
+                    opened_at=self.SUNDAY_EVENING + timedelta(hours=offset),
+                    open=D(100) + D(offset),
+                    high=D(102) + D(offset),
+                    low=D(99) + D(offset),
+                    close=D(101) + D(offset),
+                    volume=D(1000),
+                )
+                for offset in range(count)
+            ]
+        )
+
+    def _run(self, asset_type):  # type: ignore[no-untyped-def]
+        return BacktestRunner(
+            config=base_config(
+                asset_type=asset_type,
+                session=SessionConfig(timezone="America/New_York"),
+            ),
+            strategy=EntryOnFirstBar(),
+            bars=self._hourly(),
+        ).run()
+
+    def test_a_futures_entry_on_sunday_evening_is_a_monday_trade(self) -> None:
+        weekdays = {
+            row["label"]: row["trades"]
+            for row in self._run(AssetType.FUTURES).report.breakdowns["by_weekday"]
+        }
+
+        # 0 is Monday. Under calendar grouping this said 6 — Sunday.
+        assert weekdays == {"0": 1}
+
+    def test_an_equity_run_is_unaffected(self) -> None:
+        weekdays = {
+            row["label"]: row["trades"]
+            for row in self._run(AssetType.EQUITY).report.breakdowns["by_weekday"]
+        }
+
+        assert weekdays == {"6": 1}
+
+    def test_the_hour_breakdown_stays_on_the_wall_clock(self) -> None:
+        """ "What time do I enter?" is a question about the clock, not about the session.
+
+        20:00, not 19:00: the signal is raised on the first bar and the default execution model
+        fills it at the next bar's open, so the position opens an hour later.
+        """
+        for asset_type in (AssetType.FUTURES, AssetType.EQUITY):
+            hours = {
+                row["label"]: row["trades"]
+                for row in self._run(asset_type).report.breakdowns["by_hour"]
+            }
+            assert hours == {"20": 1}, asset_type
+
+    def test_one_session_is_one_row_in_the_daily_table(self) -> None:
+        """Six hourly bars spanning midnight are one futures session, so one daily return."""
+        result = self._run(AssetType.FUTURES)
+        daily = result.report.breakdowns["daily_returns"]
+
+        assert [row["date"] for row in daily] == ["2026-03-16"]
+
+        # The same bars split into two calendar days without the boundary.
+        split = self._run(AssetType.EQUITY).report.breakdowns["daily_returns"]
+        assert [row["date"] for row in split] == ["2026-03-15", "2026-03-16"]
+
+    def test_every_equity_sample_carries_its_session(self) -> None:
+        result = self._run(AssetType.FUTURES)
+
+        assert result.equity_curve
+        assert {s.trading_day.isoformat() for s in result.equity_curve} == {"2026-03-16"}
+
+    def test_a_run_without_an_asset_type_keeps_the_old_grouping(self) -> None:
+        """Nothing that omits the field changes behaviour."""
+        result = self._run(None)
+
+        assert [row["date"] for row in result.report.breakdowns["daily_returns"]] == [
+            "2026-03-15",
+            "2026-03-16",
+        ]

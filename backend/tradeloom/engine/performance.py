@@ -29,7 +29,7 @@ from tradeloom.core.money import (
     quantize_ratio,
     safe_div,
 )
-from tradeloom.core.timeutil import to_zone
+from tradeloom.core.timeutil import to_zone, trading_day
 from tradeloom.engine.portfolio import SimTrade
 
 #: R-multiple histogram edges. Buckets are [-inf,-3), [-3,-2), ... [3, +inf).
@@ -374,20 +374,24 @@ class PerformanceAnalyzer:
 
     # -- breakdowns ----------------------------------------------------
 
+    def _trading_day(self, trade: SimTrade) -> date:
+        """The session a trade was entered in, by the market's own clock where it has one."""
+        return trading_day(trade.entry_timestamp, trade.asset_type, self.timezone)
+
     def _breakdowns(self) -> dict[str, Any]:
         return {
             "by_symbol": _group(self.trades, lambda t: self.symbol or "—"),
             "by_direction": _group(self.trades, lambda t: t.direction.value),
-            "by_weekday": _group(
-                self.trades, lambda t: str(to_zone(t.entry_timestamp, self.timezone).weekday())
-            ),
+            # Weekday and month follow the trading day: a futures trade entered Sunday evening
+            # belongs to Monday's session, and a breakdown row labelled "Sunday" would name a
+            # session the market never held.
+            "by_weekday": _group(self.trades, lambda t: str(self._trading_day(t).weekday())),
+            # The hour is deliberately wall-clock. "What time do I enter?" is a question about the
+            # clock the trader was watching, not about which session the fill was booked to.
             "by_hour": _group(
                 self.trades, lambda t: str(to_zone(t.entry_timestamp, self.timezone).hour)
             ),
-            "by_month": _group(
-                self.trades,
-                lambda t: to_zone(t.entry_timestamp, self.timezone).strftime("%Y-%m"),
-            ),
+            "by_month": _group(self.trades, lambda t: self._trading_day(t).strftime("%Y-%m")),
             "by_exit_reason": _group(self.trades, lambda t: t.exit_reason or "unknown"),
             "r_distribution": self._r_distribution(),
             "monthly_returns": self._monthly_returns(),
@@ -441,7 +445,11 @@ class PerformanceAnalyzer:
             return []
         by_month: dict[str, tuple[Decimal, Decimal]] = {}
         for sample in self.equity_curve:
-            key = to_zone(sample.timestamp, self.timezone).strftime("%Y-%m")
+            key = (
+                sample.trading_day.strftime("%Y-%m")
+                if sample.trading_day is not None
+                else to_zone(sample.timestamp, self.timezone).strftime("%Y-%m")
+            )
             if key not in by_month:
                 by_month[key] = (sample.equity, sample.equity)
             else:
