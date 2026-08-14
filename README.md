@@ -22,7 +22,6 @@ four products into one workspace:
 backend/     FastAPI application, domain services, and the backtesting engine package
 worker/      Celery worker (imports the backend package; separate deployable)
 frontend/    Next.js 15 App Router client
-shared/      Cross-language contracts (enums shared by Python and TypeScript)
 data/        Seed fixtures and sample broker CSV files
 docker/      Dockerfiles and nginx configuration
 scripts/     Developer and CI helper scripts

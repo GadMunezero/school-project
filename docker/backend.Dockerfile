@@ -18,7 +18,6 @@ RUN pip install --upgrade pip && pip install -e "/app/backend[worker]"
 
 COPY backend /app/backend
 COPY worker /app/worker
-COPY shared /app/shared
 COPY data /app/data
 COPY docker/entrypoint-api.sh docker/entrypoint-worker.sh /app/docker/
 RUN chmod +x /app/docker/entrypoint-api.sh /app/docker/entrypoint-worker.sh
