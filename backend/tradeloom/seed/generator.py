@@ -702,14 +702,37 @@ class DemoSeeder:
             return moment - timedelta(days=2) if moment.weekday() >= 5 else moment
 
         entry_times = sorted(_draw() for _ in range(count))
-        left_open: set[str] = set()
 
+        # Which instrument each trade uses, decided up front so the loop can know which trade is
+        # the *last* one for a given account and symbol.
+        assignments: list[tuple[Any, Instrument]] = []
         for index in range(count):
             account = accounts[index % len(accounts)]
             pool = pools[account.id] or instruments
-            instrument = rng.choice(pool)
+            assignments.append((account, rng.choice(pool)))
+
+        final_index = {
+            (account.id, instrument.symbol): index
+            for index, (account, instrument) in enumerate(assignments)
+        }
+
+        #: The last fill recorded for each account and symbol. Sorted *entries* are not enough to
+        #: keep a position's history moving forward: a trade holds for up to two days, so its exit
+        #: can land after the next trade's entry. When that next trade closes an open position,
+        #: the exit it carries becomes the new position's open — and the trade after that arrives
+        #: back-dated against it. Ingestion refuses those outright, as it should.
+        last_fill_at: dict[tuple[Any, str], datetime] = {}
+        left_open: set[tuple[Any, str]] = set()
+
+        for index in range(count):
+            account, instrument = assignments[index]
+            key = (account.id, instrument.symbol)
 
             entry_at = entry_times[index]
+            # Nudge past whatever this symbol last recorded, keeping the sequence forward-only.
+            earliest = last_fill_at.get(key)
+            if earliest is not None and entry_at <= earliest:
+                entry_at = earliest + timedelta(minutes=5)
 
             base = float(next(s.start_price for s in INSTRUMENTS if s.symbol == instrument.symbol))
             spec = next(s for s in INSTRUMENTS if s.symbol == instrument.symbol)
@@ -788,17 +811,15 @@ class DemoSeeder:
                     )
                 )
 
-            # A few positions stay open so the open-positions view is populated — but only near
-            # the end of a symbol's history, and only once per symbol. Leaving one open in the
-            # middle would make every later trade in that symbol continue it, merging separate
-            # round trips into one long, incoherent record.
-            if (
-                index >= int(count * 0.96)
-                and instrument.symbol not in left_open
-                and len(left_open) < 3
-            ):
+            # A few positions stay open so the open-positions view is populated — but only on the
+            # very last trade for that account and symbol. Leaving one open earlier would make
+            # every later trade in that symbol continue it, merging separate round trips into one
+            # long, incoherent record.
+            if index == final_index[key] and len(left_open) < 3:
                 fills = fills[:1]
-                left_open.add(instrument.symbol)
+                left_open.add(key)
+
+            last_fill_at[key] = max(fill.timestamp for fill in fills)
 
             trades = await service.ingest_fills(
                 account=account,

@@ -41,3 +41,6 @@ data/postgres/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local development database created by scripts/dev.sh
+.tradeloom-dev.db

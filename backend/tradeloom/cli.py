@@ -7,6 +7,7 @@ Used by the Docker entrypoints and by developers::
     python -m tradeloom.cli seed --demo
     python -m tradeloom.cli reset --force        # development only
     python -m tradeloom.cli create-admin --email you@example.com
+    python -m tradeloom.cli run-jobs             # execute queued backtests without a worker
 """
 
 from __future__ import annotations
@@ -167,6 +168,54 @@ async def _create_admin(email: str, password: str | None) -> int:
     return 0
 
 
+async def _run_jobs(limit: int) -> int:
+    """Execute queued backtest runs in this process.
+
+    Submitting a backtest queues it for a Celery worker, which needs a broker. On a laptop that is
+    a lot of infrastructure to stand up just to see a result, so this drains the queue directly.
+
+    It is not a substitute for the worker and does not pretend to be one: it runs the very same
+    ``BacktestService.execute`` the worker calls, one run at a time, in the foreground. Nothing is
+    simulated and no status is invented — a run that fails here fails there.
+    """
+    from tradeloom.core.enums import JobStatus
+    from tradeloom.db.session import dispose_engine, session_scope
+    from tradeloom.models.backtest import BacktestRun
+    from tradeloom.services.backtests import BacktestService
+
+    executed = 0
+    async with session_scope() as session:
+        result = await session.execute(
+            select(BacktestRun)
+            .where(BacktestRun.status == JobStatus.QUEUED)
+            .order_by(BacktestRun.created_at.asc())
+            .limit(limit)
+        )
+        runs = list(result.scalars().all())
+        if not runs:
+            print("no queued runs")
+            await dispose_engine()
+            return 0
+
+        for run in runs:
+            service = BacktestService(
+                session, run.organization_id, actor_user_id=run.triggered_by_user_id
+            )
+            print(f"running {run.id} …", flush=True)
+            try:
+                finished = await service.execute(run.id)
+                await session.commit()
+                print(f"  {finished.status.value}: {finished.trade_count} trades")
+                executed += 1
+            except Exception as error:  # report and carry on to the next run
+                await session.rollback()
+                print(f"  failed: {error}", file=sys.stderr)
+
+    await dispose_engine()
+    print(f"executed {executed} run(s)")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tradeloom", description="Tradeloom operations")
     parser.add_argument("--version", action="version", version=f"tradeloom {__version__}")
@@ -189,6 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     admin.add_argument("--email", required=True)
     admin.add_argument("--password", default=None, help="Prompted for if omitted")
 
+    jobs = subparsers.add_parser(
+        "run-jobs", help="Execute queued backtest runs here, without a Celery worker"
+    )
+    jobs.add_argument("--limit", type=int, default=10)
+
     return parser
 
 
@@ -202,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed": lambda: _seed(args.demo, args.trades, args.days),
         "reset": lambda: _reset(args.force),
         "create-admin": lambda: _create_admin(args.email, args.password),
+        "run-jobs": lambda: _run_jobs(args.limit),
     }
     return asyncio.run(handlers[args.command]())
 

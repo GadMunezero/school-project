@@ -34,6 +34,32 @@ and why business logic lives in services rather than routes or React components.
 
 ---
 
+## Quick start (one command)
+
+```bash
+scripts/dev.sh
+```
+
+Creates a Python virtualenv, installs dependencies, builds and seeds a local SQLite database, and
+starts the API on `http://localhost:8000` and the app on `http://localhost:3000`. No Postgres, no
+Redis, no Docker. Sign in with `demo@example.com` / `DemoTrader!2024`.
+
+Pass `--fresh` to wipe the local database and re-seed.
+
+The demo workspace includes a backtest that has already been run, so the results page has real
+engine output the moment you open it. Submitting a *new* backtest queues it for a Celery worker,
+which needs Redis — rather than make you stand that up, drain the queue from another shell:
+
+```bash
+scripts/jobs.sh            # execute whatever is queued
+scripts/jobs.sh --watch    # keep executing as runs arrive
+```
+
+That calls the same `BacktestService.execute` the worker calls, so a run that succeeds there
+succeeds here, and one that fails, fails identically.
+
+---
+
 ## Quick start (Docker)
 
 ```bash

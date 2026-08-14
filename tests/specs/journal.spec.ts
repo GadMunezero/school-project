@@ -38,11 +38,11 @@ test.describe("journal", () => {
 
     const body = await page.locator("body").innerText();
 
-    // net_pnl arrives as a decimal string like "-142.50". The page must show those exact digits,
-    // grouped — never a re-derived or re-rounded figure.
-    const [whole, fraction = "00"] = String(trade.net_pnl).replace("-", "").split(".");
-    const grouped = Number(whole).toLocaleString("en-US");
-    expect(body).toContain(`${grouped}.${fraction.padEnd(2, "0").slice(0, 2)}`);
+    // net_pnl arrives at full precision — "320.3263246069" for a fractional crypto size — and the
+    // page shows it rounded to the currency's minor unit. The expectation is computed here rather
+    // than borrowed from the app, so this still fails if the page derives the figure from
+    // anything other than the net_pnl the API sent.
+    expect(body).toContain(toCents(String(trade.net_pnl)));
   });
 
   test("an undefined R multiple renders as a dash, not as zero", async ({ authedPage: page }) => {
@@ -113,3 +113,25 @@ test.describe("journal", () => {
     await expectNoFloatArtefacts(page);
   });
 });
+
+/**
+ * Round a decimal string to cents the way the display does: half-up on the magnitude, with
+ * thousands grouping.
+ *
+ * Written out here rather than imported from the app so the assertion has an independent opinion
+ * about the right answer. Truncating instead of rounding is what an earlier version did, and it
+ * passed only while the first seeded trade happened to have a third decimal below five.
+ */
+function toCents(decimal: string): string {
+  const negative = decimal.startsWith("-");
+  const [whole, fraction = ""] = decimal.replace("-", "").split(".");
+  const padded = (fraction + "000").slice(0, 3);
+
+  let cents = BigInt(whole || "0") * 100n + BigInt(padded.slice(0, 2));
+  if (Number(padded[2]) >= 5) cents += 1n;
+
+  const units = cents / 100n;
+  const remainder = cents % 100n;
+  const grouped = Number(units).toLocaleString("en-US");
+  return `${negative ? "-" : ""}${grouped}.${String(remainder).padStart(2, "0")}`;
+}
