@@ -318,6 +318,22 @@ class TradeService:
         existing = await self.trades.open_trade_for(
             account.id, instrument.id if instrument else None, symbol
         )
+
+        # Ingestion is incremental: new fills continue the open trade rather than rebuilding the
+        # symbol's whole history. That only holds if they come *after* it. A back-dated fill would
+        # be folded into a position it predates, producing a trade whose exit precedes its entry —
+        # so refuse it rather than persist an incoherent record. Callers that legitimately hold
+        # unordered fills (the CSV pipeline) sort per symbol before calling.
+        if existing is not None and existing.entry_timestamp is not None:
+            opened_at = ensure_aware(existing.entry_timestamp)
+            earliest = min(ensure_aware(payload.timestamp) for payload in fills)
+            if earliest < opened_at:
+                raise UnprocessableStateError(
+                    f"This fill is dated {earliest.isoformat()}, before the open {symbol} "
+                    f"position it would join (opened {opened_at.isoformat()}). Close or correct "
+                    "that position first, or record the fills in the order they happened."
+                )
+
         initial = _aggregate_from_trade(existing, multiplier) if existing else None
 
         result = build_trades(engine_fills, contract_multiplier=multiplier, initial=initial)

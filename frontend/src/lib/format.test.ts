@@ -161,6 +161,11 @@ describe("formatDuration", () => {
     expect(formatDuration(null)).toBe("—");
     expect(formatDuration(0)).toBe("0s");
   });
+
+  it("refuses to present a negative hold as a measurement", () => {
+    expect(formatDuration(-2559312)).toBe("—");
+    expect(formatDuration(-1)).toBe("—");
+  });
 });
 
 describe("misc", () => {

@@ -234,6 +234,9 @@ export function formatDate(iso: string | null | undefined, fallback = "—"): st
 /** Human duration from seconds: "4m", "2h 15m", "3d 4h". */
 export function formatDuration(seconds: number | null | undefined, fallback = "—"): string {
   if (seconds === null || seconds === undefined || Number.isNaN(seconds)) return fallback;
+  // A negative hold is not a duration — it means an exit was recorded before its entry. Show the
+  // "no value" dash rather than a literal "-2559312s", which reads as a real measurement.
+  if (seconds < 0) return fallback;
   if (seconds < 60) return `${Math.round(seconds)}s`;
 
   const minutes = Math.floor(seconds / 60);

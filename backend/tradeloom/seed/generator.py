@@ -632,18 +632,31 @@ class DemoSeeder:
             accounts[2].id: crypto,
         }
 
+        # Entry times are drawn up front and sorted, so the demo history is recorded the way a
+        # real one accumulates: forward in time. Ingestion continues whatever position is open for
+        # a symbol, so feeding it back-dated fills would graft a trade onto a position that had
+        # not opened yet — which the service now refuses outright.
+        # The weekend shift happens *before* the sort, not after: nudging a Saturday back to the
+        # preceding Thursday would otherwise reorder the sequence and reintroduce the back-dating.
+        # It is applied to every instrument, including crypto, for the same reason.
+        def _draw() -> datetime:
+            moment = (now - timedelta(days=rng.randint(1, 400))).replace(
+                hour=rng.choice([14, 15, 16, 17, 18, 19, 20]),
+                minute=rng.choice([0, 5, 15, 30, 45]),
+                second=0,
+                microsecond=0,
+            )
+            return moment - timedelta(days=2) if moment.weekday() >= 5 else moment
+
+        entry_times = sorted(_draw() for _ in range(count))
+        left_open: set[str] = set()
+
         for index in range(count):
             account = accounts[index % len(accounts)]
             pool = pools[account.id] or instruments
             instrument = rng.choice(pool)
 
-            days_ago = rng.randint(1, 400)
-            hour = rng.choice([14, 15, 16, 17, 18, 19, 20])
-            entry_at = (now - timedelta(days=days_ago)).replace(
-                hour=hour, minute=rng.choice([0, 5, 15, 30, 45]), second=0, microsecond=0
-            )
-            if entry_at.weekday() >= 5 and instrument.asset_type is not AssetType.CRYPTO:
-                entry_at -= timedelta(days=2)
+            entry_at = entry_times[index]
 
             base = float(next(s.start_price for s in INSTRUMENTS if s.symbol == instrument.symbol))
             spec = next(s for s in INSTRUMENTS if s.symbol == instrument.symbol)
@@ -722,9 +735,17 @@ class DemoSeeder:
                     )
                 )
 
-            # A few trades stay open so the open-positions view is populated.
-            if index % 97 == 0:
+            # A few positions stay open so the open-positions view is populated — but only near
+            # the end of a symbol's history, and only once per symbol. Leaving one open in the
+            # middle would make every later trade in that symbol continue it, merging separate
+            # round trips into one long, incoherent record.
+            if (
+                index >= int(count * 0.96)
+                and instrument.symbol not in left_open
+                and len(left_open) < 3
+            ):
                 fills = fills[:1]
+                left_open.add(instrument.symbol)
 
             trades = await service.ingest_fills(
                 account=account,
