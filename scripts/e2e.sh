@@ -48,6 +48,34 @@ trap cleanup EXIT
 
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
+# A leftover server from an earlier run holds the port, the new one fails to bind, and the suite
+# then tests the *old* build against the *old* database — which fails in ways that look like code
+# bugs and are not. Clear the ports first rather than debug that a third time.
+stop_previous_servers() {
+  local found=0 pid cmd
+  for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null) || continue
+    # Match only the servers this script starts. Deliberately not port-scoped: mapping a port to
+    # a pid needs /proc/net inspection that is namespace-wide rather than per-process, and this
+    # script is about to start its own pair anyway.
+    case "$cmd" in
+      *next-server*|*"standalone/server.js"*|*"uvicorn tradeloom.main"*)
+        kill -9 "$pid" 2>/dev/null && found=1
+        ;;
+    esac
+  done
+  [ "$found" = 1 ] && { echo "  stopped a server left over from an earlier run"; sleep 2; }
+
+  local port
+  for port in "$API_PORT" "$WEB_PORT"; do
+    if curl -sS -o /dev/null -m 2 "http://localhost:${port}/" 2>/dev/null; then
+      echo "error: something is still listening on ${port}; it is not ours and the suite would" >&2
+      echo "       test it instead of the build under test. Stop it and re-run." >&2
+      exit 1
+    fi
+  done
+}
+
 wait_for() { # url, label
   for _ in $(seq 1 60); do
     if curl -sS -o /dev/null "$1" 2>/dev/null; then return 0; fi
@@ -56,6 +84,9 @@ wait_for() { # url, label
   echo "timed out waiting for $2 at $1" >&2
   return 1
 }
+
+step "clear any servers from an earlier run"
+stop_previous_servers
 
 step "seed a throwaway database"
 "$PY" -m tradeloom.cli reset --force >/dev/null
