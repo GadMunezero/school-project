@@ -345,6 +345,32 @@ class FeedbackReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
 
 
+class PolicyAcceptance(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A record that someone agreed to a specific version of a specific document.
+
+    A row per (user, document, version) rather than a flag on the user, because the question that
+    actually gets asked is "which version did this person accept, and when" — and a boolean
+    cannot answer it after the text changes.
+    """
+
+    __tablename__ = "policy_acceptances"
+    __table_args__ = (
+        UniqueConstraint("user_id", "document", "version", name="uq_policy_acceptance"),
+        Index("ix_policy_acceptances_user", "user_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    #: "terms" | "privacy"
+    document: Mapped[str] = mapped_column(String(24), nullable=False)
+    version: Mapped[str] = mapped_column(String(24), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(TZDateTime(), nullable=False)
+    #: Evidence of the circumstances, which is the point of keeping the record at all.
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(320), nullable=True)
+
+
 __all__ = [
     "AnalyticsSnapshot",
     "AuditLog",
@@ -353,6 +379,7 @@ __all__ = [
     "InviteRedemption",
     "JobRecord",
     "Notification",
+    "PolicyAcceptance",
     "Subscription",
     "SubscriptionEvent",
 ]

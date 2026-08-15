@@ -64,7 +64,9 @@ class SignupRequest(TradeloomModel):
     #: Optional workspace name; defaults to "<first name>'s workspace".
     organization_name: str | None = Field(default=None, max_length=120)
     timezone: str = "UTC"
-    accepted_terms: bool = True
+    #: Must be explicitly true. It used to default to true and the client hardcoded it, which
+    #: meant nobody had ever actually agreed to anything and no record existed either way.
+    accepted_terms: bool = False
     #: Required only when the deployment runs a closed signup (``SIGNUP_MODE=invite``).
     invite_code: str | None = Field(default=None, max_length=40)
 

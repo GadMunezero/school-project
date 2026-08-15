@@ -156,6 +156,25 @@ class AuthService:
 
             await InviteService(self.session).attach_user(invite, user.id, email)
 
+        # What they agreed to, and when. A boolean on the user could not answer that question
+        # once the text changed, which is the only time anyone asks it.
+        from tradeloom.core.legal import VERSIONS
+        from tradeloom.models.platform import PolicyAcceptance
+
+        accepted_at = utcnow()
+        for document, version in VERSIONS.items():
+            self.session.add(
+                PolicyAcceptance(
+                    user_id=user.id,
+                    document=document,
+                    version=version,
+                    accepted_at=accepted_at,
+                    ip_address=context.ip_address,
+                    user_agent=context.user_agent,
+                )
+            )
+        await self.session.flush()
+
         token = await self.issue_email_token(user, PURPOSE_VERIFY_EMAIL, context)
         self.email_service.send_verification(user.email, user.display_name, token)
 

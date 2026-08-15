@@ -173,6 +173,7 @@ class TestSignupGate:
                 "email": "open@example.com",
                 "password": "OpenSesame!2026",
                 "full_name": "Open Signup",
+                "accepted_terms": True,
             },
         )
         assert response.status_code == 201, response.text
@@ -193,6 +194,7 @@ class TestSignupGate:
                 "email": "uninvited@example.com",
                 "password": "NoEntry!2026xy",
                 "full_name": "Uninvited Person",
+                "accepted_terms": True,
             },
         )
         assert response.status_code in (400, 422), response.text
@@ -204,6 +206,7 @@ class TestSignupGate:
                 "email": "guessing@example.com",
                 "password": "Guessing!2026xy",
                 "full_name": "Guessing Person",
+                "accepted_terms": True,
                 "invite_code": "ZZZZZZZZZZ",
             },
         )
@@ -218,6 +221,7 @@ class TestSignupGate:
                 "email": "invited@example.com",
                 "password": "Welcome!2026xy",
                 "full_name": "Invited Person",
+                "accepted_terms": True,
                 "invite_code": code,
             },
         )
@@ -229,6 +233,7 @@ class TestSignupGate:
                 "email": "gatecrasher@example.com",
                 "password": "Welcome!2026xy",
                 "full_name": "Gate Crasher",
+                "accepted_terms": True,
                 "invite_code": code,
             },
         )
@@ -248,6 +253,7 @@ class TestSignupGate:
                 "email": "orphan@example.com",
                 "password": "Orphaned!2026xy",
                 "full_name": "Orphan Candidate",
+                "accepted_terms": True,
                 "invite_code": "NOPENOPENO",
             },
         )
@@ -296,6 +302,7 @@ class TestAdminEndpoints:
                 "email": "cohort@example.com",
                 "password": "Welcome!2026xy",
                 "full_name": "Cohort Member",
+                "accepted_terms": True,
                 "invite_code": code,
             },
         )

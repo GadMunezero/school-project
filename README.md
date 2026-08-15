@@ -135,6 +135,26 @@ whoever is typing, so the form cannot be used to discover which codes exist.
 
 ---
 
+## Before real users: the legal documents
+
+`content/legal/terms.md` and `content/legal/privacy.md` ship as **placeholders that say so**.
+Nobody should write your terms of service for you, least of all a language model, so the
+repository does not pretend to have done it.
+
+Both pages, the consent checkbox and the acceptance record all work end to end against them —
+what is missing is only the text. Write each document, delete the `UNWRITTEN-PLACEHOLDER` marker
+on its first line, and bump the matching entry in `VERSIONS` in
+`backend/tradeloom/core/legal.py`.
+
+Until you do, `validate_for_production()` refuses to boot a production process, and the pages
+carry a visible warning. Both are deliberate: recording that users accepted repository
+boilerplate would be worse than having no terms at all.
+
+Consent is recorded per user, per document, per version, with the time and the request's IP and
+user agent — so "which version did this person agree to" has an answer after the text changes.
+
+---
+
 ## Verification commands
 
 | What | Command |

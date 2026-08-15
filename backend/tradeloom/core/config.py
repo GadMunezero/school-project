@@ -213,6 +213,18 @@ class Settings(BaseSettings):
             problems.append("STRIPE_WEBHOOK_SECRET is required when STRIPE_ENABLED is true")
         if not self.s3_access_key_id or not self.s3_secret_access_key:
             problems.append("S3 credentials are required in production")
+
+        # Serving unwritten placeholder terms to real users, and recording that they accepted
+        # them, is worse than having no terms at all.
+        from tradeloom.core.legal import unwritten
+
+        missing = unwritten()
+        if missing:
+            problems.append(
+                "These legal documents are still the shipped placeholder: "
+                f"{', '.join(missing)}. Write content/legal/<name>.md and remove the "
+                "UNWRITTEN-PLACEHOLDER marker on its first line."
+            )
         return problems
 
 

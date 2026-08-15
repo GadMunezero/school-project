@@ -16,6 +16,7 @@ from tradeloom.api.v1.routers import (
     imports,
     instruments,
     journal,
+    legal,
     market_data,
     notifications,
     orders,
@@ -55,6 +56,7 @@ api_router.include_router(files.router)
 api_router.include_router(search.router)
 api_router.include_router(notifications.router)
 api_router.include_router(billing.router)
+api_router.include_router(legal.router)
 api_router.include_router(feedback.router)
 api_router.include_router(admin.router)
 

@@ -36,6 +36,7 @@ from tradeloom.models.platform import (
     InviteRedemption,
     JobRecord,
     Notification,
+    PolicyAcceptance,
     Subscription,
     SubscriptionEvent,
 )
@@ -77,6 +78,7 @@ __all__ = [
     "Organization",
     "OrganizationMember",
     "Permission",
+    "PolicyAcceptance",
     "Position",
     "ReplaySession",
     "Role",

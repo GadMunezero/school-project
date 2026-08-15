@@ -31,6 +31,9 @@ const schema = z.object({
     .refine((value) => new Set(value).size >= 6, "Use at least six different characters"),
   organization_name: z.string().max(120).optional(),
   invite_code: z.string().max(40).optional(),
+  accepted_terms: z
+    .boolean()
+    .refine((value) => value, "Please accept the terms and privacy policy to continue"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -47,6 +50,7 @@ export default function SignupPage() {
       password: "",
       organization_name: "",
       invite_code: "",
+      accepted_terms: false,
     },
   });
 
@@ -66,7 +70,6 @@ export default function SignupPage() {
         organization_name: values.organization_name || undefined,
         invite_code: values.invite_code || undefined,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-        accepted_terms: true,
       }),
     onSuccess: (session) => {
       queryClient.setQueryData(queryKeys.session, session);
@@ -157,6 +160,30 @@ export default function SignupPage() {
           hint="Optional — defaults to your name."
         >
           <Input id="organization_name" {...form.register("organization_name")} />
+        </Field>
+
+        {/* Ticked by the person, not by the form. It used to be hardcoded true, which meant
+            nobody had ever actually agreed to anything. The version accepted is recorded. */}
+        <Field error={form.formState.errors.accepted_terms?.message} htmlFor="accepted_terms">
+          <label className="flex items-start gap-2.5 text-sm text-muted">
+            <input
+              id="accepted_terms"
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-accent"
+              {...form.register("accepted_terms")}
+            />
+            <span>
+              I agree to the{" "}
+              <Link href="/legal/terms" target="_blank" className="text-accent hover:underline">
+                Terms of Service
+              </Link>{" "}
+              and the{" "}
+              <Link href="/legal/privacy" target="_blank" className="text-accent hover:underline">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
         </Field>
 
         <Button type="submit" variant="primary" size="lg" className="w-full justify-center" loading={signup.isPending}>
