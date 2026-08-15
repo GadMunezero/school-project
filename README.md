@@ -189,6 +189,7 @@ CI (`.github/workflows/ci.yml`) runs the same commands plus a migration-drift ch
 | [API.md](docs/API.md) | Envelope format, pagination, filtering, error codes |
 | [SECURITY.md](docs/SECURITY.md) | Auth, session rotation, tenant isolation, upload rules |
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production topology, backups, monitoring, retention |
+| [RUNBOOK.md](docs/RUNBOOK.md) | One server, start to finish: domain, TLS, first invite, verified restore |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Conventions and the definition of done |
 
 ## Status and known limitations

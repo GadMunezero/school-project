@@ -78,19 +78,24 @@ The database is the only irreplaceable component. Object storage holds user uplo
 backed up or versioned too.
 
 ```bash
-# Nightly logical backup
-pg_dump --format=custom --compress=9 \
-        --file="tradeloom-$(date +%F).dump" "$DATABASE_URL"
+# Nightly, from cron. Writes a compressed custom-format dump and prunes old ones.
+BACKUP_DIR=/srv/backups scripts/backup.sh
 
-# Restore
-pg_restore --clean --if-exists --no-owner --dbname="$TARGET_URL" tradeloom-2024-05-06.dump
+# Weekly. Restores into a scratch database, checks the schema against the models, counts the
+# core tables, and drops the scratch database again. Never touches the source database.
+scripts/restore-check.sh /srv/backups/tradeloom-20260815T030000Z.dump
+
+# A real restore, when you actually need one:
+pg_restore --clean --if-exists --no-owner --dbname="$TARGET_URL" /srv/backups/<dump>
 ```
 
 Recommended: nightly logical dumps retained 30 days, plus continuous WAL archiving (PITR) for a
 recovery point measured in minutes. A managed provider's automated backups usually cover both.
 
-**Restore drills matter more than backups.** Restore into a scratch database quarterly and run
-`alembic check` plus a sample query. An untested backup is a hypothesis.
+**Restore drills matter more than backups.** `scripts/restore-check.sh` is that drill, and CI runs
+it on every push so the scripts themselves cannot rot. An untested backup is a hypothesis — this
+one found a foreign key the models declared and the initial migration never emitted, missing from
+every PostgreSQL database the schema had ever created and invisible to the SQLite drift check.
 
 Encrypt backups at rest — a dump contains every user's complete trading history.
 

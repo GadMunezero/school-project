@@ -28,6 +28,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    # The schema checks below run against PostgreSQL as well as SQLite. They used to run against
+    # SQLite alone, which does not reflect a constraint the models declared and the initial
+    # migration never emitted — production had no foreign key on users.avatar_file_id at all, and
+    # a restore drill is what eventually found it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tradeloom
+          POSTGRES_PASSWORD: tradeloom
+          POSTGRES_DB: tradeloom_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tradeloom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +88,27 @@ jobs:
         env:
           DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/ci.db
         run: alembic -c backend/alembic.ini check
+
+      - name: Migrations and drift on PostgreSQL
+        env:
+          DATABASE_URL: postgresql+asyncpg://tradeloom:tradeloom@localhost:5432/tradeloom_ci
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini downgrade base
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini check
+
+      - name: Backup and restore round-trip
+        env:
+          DATABASE_URL: postgresql+asyncpg://tradeloom:tradeloom@localhost:5432/tradeloom_ci
+          RESTORE_ADMIN_URL: postgresql://tradeloom:tradeloom@localhost:5432/postgres
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+          PYTHON: python
+          BACKUP_DIR: ${{ runner.temp }}/backups
+        run: |
+          python -m tradeloom.cli seed --demo --trades 40 --days 60
+          scripts/backup.sh
+          scripts/restore-check.sh "$(ls -t "$BACKUP_DIR"/*.dump | head -1)"
 
       - name: Demo seed loads
         env:
