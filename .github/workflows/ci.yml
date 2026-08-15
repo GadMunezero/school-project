@@ -1,0 +1,232 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Test-only values. Real secrets never live in CI configuration.
+  TRADELOOM_ENV: test
+  SECRET_KEY: ci-only-secret-key-not-used-anywhere-else-0123456789
+  RATE_LIMIT_ENABLED: "false"
+  EMAIL_ENABLED: "false"
+  STRIPE_ENABLED: "false"
+  # Argon2 at production cost would dominate CI time; the algorithm is unchanged.
+  ARGON2_TIME_COST: "1"
+  ARGON2_MEMORY_COST_KIB: "8192"
+  ARGON2_PARALLELISM: "1"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The schema checks below run against PostgreSQL as well as SQLite. They used to run against
+    # SQLite alone, which does not reflect a constraint the models declared and the initial
+    # migration never emitted — production had no foreign key on users.avatar_file_id at all, and
+    # a restore drill is what eventually found it.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tradeloom
+          POSTGRES_PASSWORD: tradeloom
+          POSTGRES_DB: tradeloom_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tradeloom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check backend worker
+
+      - name: Format (black)
+        run: black --check -l 100 backend worker
+
+      - name: Type check (mypy)
+        # Not yet blocking: the codebase is annotated but a clean strict run is still in progress.
+        run: mypy backend/tradeloom
+        continue-on-error: true
+
+      - name: Tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+        run: pytest backend/tests -q --cov=tradeloom --cov-report=term-missing:skip-covered
+
+      - name: Migrations apply and downgrade cleanly
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/ci.db
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini downgrade base
+          alembic -c backend/alembic.ini upgrade head
+
+      - name: No model/migration drift
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/ci.db
+        run: alembic -c backend/alembic.ini check
+
+      - name: Migrations and drift on PostgreSQL
+        env:
+          DATABASE_URL: postgresql+asyncpg://tradeloom:tradeloom@localhost:5432/tradeloom_ci
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini downgrade base
+          alembic -c backend/alembic.ini upgrade head
+          alembic -c backend/alembic.ini check
+
+      - name: Backup and restore round-trip
+        env:
+          DATABASE_URL: postgresql+asyncpg://tradeloom:tradeloom@localhost:5432/tradeloom_ci
+          RESTORE_ADMIN_URL: postgresql://tradeloom:tradeloom@localhost:5432/postgres
+          PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/backend
+          PYTHON: python
+          BACKUP_DIR: ${{ runner.temp }}/backups
+        run: |
+          python -m tradeloom.cli seed --demo --trades 40 --days 60
+          scripts/backup.sh
+          scripts/restore-check.sh "$(ls -t "$BACKUP_DIR"/*.dump | head -1)"
+
+      - name: Demo seed loads
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/seed.db
+          TRADELOOM_ENV: development
+        run: |
+          python -m tradeloom.cli reset --force
+          python -m tradeloom.cli seed --demo --trades 200 --days 120
+
+      - name: OpenAPI schema generates
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/schema.db
+        run: |
+          python - <<'PY'
+          import json
+          from tradeloom.main import create_app
+          schema = create_app().openapi()
+          paths = len(schema["paths"])
+          print(f"OpenAPI: {paths} paths")
+          assert paths > 60, "unexpectedly few endpoints — did a router fail to register?"
+          PY
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend, frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            tests/package-lock.json
+
+      - name: Install the backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "backend[dev]"
+
+      - name: Install the frontend
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install the test runner
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: tests
+
+      # scripts/e2e.sh seeds a throwaway database, starts the API, builds the frontend and serves
+      # the standalone output — the same artefact the container image runs.
+      - name: Run the suite
+        env:
+          PYTHON: python
+        run: ./scripts/e2e.sh
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tests/playwright-report
+          retention-days: 7
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/backend.Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

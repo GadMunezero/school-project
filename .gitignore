@@ -1,0 +1,49 @@
+# Environment
+.env
+.env.*
+!.env.example
+# Development-only values, deliberately committed so evaluating the app needs no setup. Every
+# value in it is refused by validate_for_production(), so it cannot become a deployment.
+!.env.demo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# Local data
+data/generated/
+data/minio/
+data/postgres/
+*.sqlite3
+*.db
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local development database created by scripts/dev.sh
+.tradeloom-dev.db

@@ -1,0 +1,62 @@
+import type { QueryParams } from "./api";
+
+/**
+ * Query key factory.
+ *
+ * Centralised so an invalidation cannot miss a cache entry through a typo. Keys mirror the API's
+ * resource hierarchy: invalidating `["trades"]` clears every trade list and detail.
+ */
+export const queryKeys = {
+  session: ["session"] as const,
+  accounts: (params?: QueryParams) => ["accounts", params ?? {}] as const,
+  account: (id: string) => ["accounts", id] as const,
+  accountTransactions: (id: string, page: number) => ["accounts", id, "transactions", page] as const,
+  trades: (params: QueryParams) => ["trades", params] as const,
+  trade: (id: string) => ["trades", id] as const,
+  positions: (params?: QueryParams) => ["positions", params ?? {}] as const,
+  orders: (params?: QueryParams) => ["orders", params ?? {}] as const,
+  instruments: (params?: QueryParams) => ["instruments", params ?? {}] as const,
+  tags: ["tags"] as const,
+  setups: ["setups"] as const,
+  strategies: (params?: QueryParams) => ["strategies", params ?? {}] as const,
+  strategy: (id: string) => ["strategies", id] as const,
+  engineStrategies: ["strategies", "engine"] as const,
+  journalEntries: (params?: QueryParams) => ["journal-entries", params ?? {}] as const,
+  imports: (params?: QueryParams) => ["imports", params ?? {}] as const,
+  importRecord: (id: string) => ["imports", id] as const,
+  importPreview: (id: string) => ["imports", id, "preview"] as const,
+  importTemplates: ["imports", "templates"] as const,
+  backtests: (params?: QueryParams) => ["backtests", params ?? {}] as const,
+  backtest: (id: string) => ["backtests", id] as const,
+  backtestRuns: (id: string) => ["backtests", id, "runs"] as const,
+  backtestRun: (id: string) => ["backtest-runs", id] as const,
+  job: (id: string) => ["jobs", id] as const,
+  replays: ["replay"] as const,
+  replay: (id: string) => ["replay", id] as const,
+  analytics: (params: QueryParams) => ["analytics", params] as const,
+  dashboard: (params: QueryParams) => ["analytics", "dashboard", params] as const,
+  calendarDay: (day: string, params: QueryParams) =>
+    ["analytics", "calendar", day, params] as const,
+  reports: ["reports"] as const,
+  report: (key: string, params: QueryParams) => ["reports", key, params] as const,
+  marketDataSources: ["market-data", "sources"] as const,
+  coverage: (instrumentId: string) => ["market-data", "coverage", instrumentId] as const,
+  allCoverage: ["market-data", "coverage"] as const,
+  candles: (params: QueryParams) => ["market-data", "candles", params] as const,
+  notifications: (params?: QueryParams) => ["notifications", params ?? {}] as const,
+  unreadCount: ["notifications", "unread"] as const,
+  search: (query: string) => ["search", query] as const,
+  billingPlans: ["billing", "plans"] as const,
+  subscription: ["billing", "subscription"] as const,
+  organization: ["organizations", "current"] as const,
+  members: ["organizations", "members"] as const,
+  adminOverview: ["admin", "overview"] as const,
+  adminUsers: (params?: QueryParams) => ["admin", "users", params ?? {}] as const,
+  adminOrganizations: (params?: QueryParams) => ["admin", "organizations", params ?? {}] as const,
+  adminJobs: (params?: QueryParams) => ["admin", "jobs", params ?? {}] as const,
+  adminInvites: ["admin", "invites"] as const,
+  adminFeedback: (params?: QueryParams) => ["admin", "feedback", params ?? {}] as const,
+  adminAuditLogs: (params?: QueryParams) => ["admin", "audit-logs", params ?? {}] as const,
+  activeSessions: ["auth", "sessions"] as const,
+  storageUsage: ["files", "usage"] as const,
+} as const;
