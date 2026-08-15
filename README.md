@@ -60,27 +60,36 @@ succeeds here, and one that fails, fails identically.
 
 ---
 
-## Quick start (Docker)
+## Quick start (Docker — the whole system)
 
 ```bash
-cp .env.example .env
-docker compose up --build
+scripts/demo.sh
 ```
 
-This starts Postgres, Redis, MinIO (S3-compatible), the API, the Celery worker, the Next.js
-frontend, and an nginx reverse proxy. The API waits for Postgres to become healthy, runs Alembic
-migrations, and then serves on `http://localhost:8000`. The frontend is on `http://localhost:3000`
-and nginx fronts both on `http://localhost:8080`.
+Docker is the only prerequisite. This is the closest thing to running the real product: Postgres,
+Redis, MinIO (S3-compatible), a mail catcher, the API, the **Celery worker**, the Next.js frontend
+and an nginx proxy. It writes a `.env` with a generated `SECRET_KEY`, waits for the stack to come
+up, seeds a demo workspace if the database is empty, and prints where to go.
 
-Load the demo workspace (a demo user, three accounts, thousands of generated trades, candles,
-strategies and a completed backtest):
+Everything is served from **one origin**, `http://localhost:8080` — nginx routes `/api/` to the API
+and everything else to the frontend. That is worth knowing: because the browser only ever talks to
+a single host, the cross-origin configuration that a split `localhost:3000` / `localhost:8000`
+setup needs does not apply at all.
+
+| | |
+| --- | --- |
+| App and API | `http://localhost:8080` (API docs at `/docs`) |
+| Sign in | `demo@example.com` / `DemoTrader!2024` |
+| Sent mail | `http://localhost:8025` — nothing leaves the machine |
+| File storage | `http://localhost:9001` |
 
 ```bash
-docker compose exec api python -m tradeloom.cli seed --demo
+scripts/demo.sh --down     # stop, keeping the data
+scripts/demo.sh --fresh    # wipe and start over
 ```
 
-Then sign in with the credentials the seeder prints (default `demo@example.com` /
-`DemoTrader!2024`).
+The worker is the reason to prefer this over `scripts/dev.sh`: a backtest you submit here is picked
+up and executed, instead of sitting queued until you drain it by hand.
 
 ---
 
