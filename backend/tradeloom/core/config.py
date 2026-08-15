@@ -8,6 +8,7 @@ process with development placeholders still in place.
 from __future__ import annotations
 
 import functools
+import os
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -15,10 +16,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
 
+#: A test run reads nothing from a local .env. scripts/demo.sh writes one at the repository root,
+#: and a developer who ran the demo and then ran the suite got 77 failures with no visible cause:
+#: SIGNUP_MODE=invite closed signup, and every test that registers an account broke. Tests must
+#: depend only on what the harness sets, so the file is not read at all under TRADELOOM_ENV=test.
+_ENV_FILE = None if os.getenv("TRADELOOM_ENV") == "test" else (".env", "../.env")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"),
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,

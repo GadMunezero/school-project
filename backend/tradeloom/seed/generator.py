@@ -72,6 +72,14 @@ class InstrumentSpec:
     volatility: float
     drift: float
     aliases: tuple[str, ...] = ()
+    #: The currency a price is quoted in, which is the currency P&L comes out in.
+    #:
+    #: Every instrument here quotes in USD, and that is a constraint rather than a coincidence:
+    #: net P&L is (exit - entry) x quantity x multiplier with no conversion step anywhere, so an
+    #: instrument quoting in anything else would produce a number in that currency and store it
+    #: against an account denominated in USD. A JPY pair would read 50,000 for a trade worth $332.
+    #: Adding one needs a conversion at close time first.
+    currency: str = "USD"
 
 
 INSTRUMENTS: tuple[InstrumentSpec, ...] = (
@@ -144,6 +152,61 @@ INSTRUMENTS: tuple[InstrumentSpec, ...] = (
         Decimal("0.01"),
         0.006,
         -0.00004,
+    ),
+    # The four majors that quote in USD. That is the whole set of them, and the boundary is
+    # deliberate: see InstrumentSpec.currency. USD/JPY, USD/CHF and USD/CAD quote in the other
+    # currency and cannot be represented honestly until P&L is converted at close.
+    #
+    # Contract multiplier is one standard lot (100,000 units of the base currency) and lot_size
+    # is a micro lot, so a quantity of 0.01 is 1,000 units — the granularity a retail account
+    # actually trades. A one-pip move on one standard lot is therefore $10, as it should be.
+    InstrumentSpec(
+        "EURUSD",
+        "Euro / US Dollar",
+        AssetType.FOREX,
+        Decimal("1.08500"),
+        Decimal("0.00001"),
+        Decimal(100_000),
+        Decimal("0.01"),
+        0.005,
+        0.00002,
+        ("EUR/USD", "EURUSD.FX"),
+    ),
+    InstrumentSpec(
+        "GBPUSD",
+        "British Pound / US Dollar",
+        AssetType.FOREX,
+        Decimal("1.26500"),
+        Decimal("0.00001"),
+        Decimal(100_000),
+        Decimal("0.01"),
+        0.006,
+        -0.00003,
+        ("GBP/USD", "CABLE"),
+    ),
+    InstrumentSpec(
+        "AUDUSD",
+        "Australian Dollar / US Dollar",
+        AssetType.FOREX,
+        Decimal("0.65800"),
+        Decimal("0.00001"),
+        Decimal(100_000),
+        Decimal("0.01"),
+        0.007,
+        -0.00005,
+        ("AUD/USD",),
+    ),
+    InstrumentSpec(
+        "NZDUSD",
+        "New Zealand Dollar / US Dollar",
+        AssetType.FOREX,
+        Decimal("0.61000"),
+        Decimal("0.00001"),
+        Decimal(100_000),
+        Decimal("0.01"),
+        0.007,
+        -0.00004,
+        ("NZD/USD", "KIWI"),
     ),
 )
 
@@ -382,7 +445,7 @@ class DemoSeeder:
                     name=spec.name,
                     asset_type=spec.asset_type,
                     exchange="TLX",
-                    currency="USD",
+                    currency=spec.currency,
                     tick_size=spec.tick_size,
                     contract_multiplier=spec.multiplier,
                     lot_size=spec.lot_size,
@@ -641,6 +704,21 @@ class DemoSeeder:
                 commission_config={"rate": "0.075"},
                 default_risk_percent=Decimal("1.5"),
             ),
+            # Without this the FX instruments are catalogued and never traded, which is how the
+            # 17:00 New York session boundary went unexercised by the demo data for so long.
+            AccountCreate(
+                name="FX spot",
+                broker="Meridian FX",
+                account_type=AccountType.LIVE,
+                currency="USD",
+                initial_balance=Decimal("30000"),
+                leverage=Decimal(30),
+                timezone="America/New_York",
+                # FX commission is quoted per lot, which is this instrument's contract unit.
+                commission_model=CommissionModelType.PER_CONTRACT,
+                commission_config={"rate": "3.50"},
+                default_risk_percent=Decimal("1.0"),
+            ),
         ]
         accounts = [await service.create(spec) for spec in specs]
 
@@ -679,10 +757,12 @@ class DemoSeeder:
         equity_instruments = [i for i in instruments if i.asset_type is AssetType.EQUITY]
         futures = [i for i in instruments if i.asset_type is AssetType.FUTURES]
         crypto = [i for i in instruments if i.asset_type is AssetType.CRYPTO]
+        forex = [i for i in instruments if i.asset_type is AssetType.FOREX]
         pools = {
             accounts[0].id: equity_instruments,
             accounts[1].id: futures,
             accounts[2].id: crypto,
+            accounts[3].id: forex,
         }
 
         # Entry times are drawn up front and sorted, so the demo history is recorded the way a
@@ -736,11 +816,22 @@ class DemoSeeder:
 
             base = float(next(s.start_price for s in INSTRUMENTS if s.symbol == instrument.symbol))
             spec = next(s for s in INSTRUMENTS if s.symbol == instrument.symbol)
-            entry_price = Decimal(f"{base * rng.uniform(0.72, 1.38):.4f}")
+
+            # How far entries wander from the starting price, scaled by the instrument's own
+            # volatility rather than one band for everything. A flat +-30% is reasonable for an
+            # equity or crypto over the seeded year and nonsense for FX: it put GBP/USD at 1.70
+            # against a 1.2650 start, a 34% move no major has ever made in a year.
+            spread = min(0.35, spec.volatility * 20)
+            entry_price = Decimal(
+                f"{base * rng.uniform(1 - spread, 1 + spread):.{instrument.price_precision}f}"
+            )
 
             is_long = rng.random() < 0.62
             side = OrderSide.BUY if is_long else OrderSide.SELL
-            stop_distance = entry_price * Decimal(f"{rng.uniform(0.008, 0.035):.5f}")
+            # Stops scale with volatility too — 0.8-3.5% of price is 80-350 pips on EUR/USD, which
+            # is a swing stop on an intraday trade.
+            stop_band = min(0.035, max(0.002, spec.volatility * 1.4))
+            stop_distance = entry_price * Decimal(f"{rng.uniform(stop_band * 0.4, stop_band):.5f}")
             stop = entry_price - stop_distance if is_long else entry_price + stop_distance
 
             risk_fraction = Decimal(str(rng.uniform(0.004, 0.012)))
