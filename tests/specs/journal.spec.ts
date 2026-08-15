@@ -24,25 +24,35 @@ test.describe("journal", () => {
   }) => {
     // Ask the API directly, using the browser's own session so tenancy is applied identically.
     const payload = await page.evaluate(async (apiUrl) => {
-      const response = await fetch(`${apiUrl}/api/v1/trades?page_size=1&status=closed`, {
+      const response = await fetch(`${apiUrl}/api/v1/trades?page_size=100&status=closed`, {
         credentials: "include",
       });
       return response.json();
     }, API_URL);
 
-    const trade = payload?.data?.[0];
-    test.skip(!trade, "the demo seed produced no closed trades");
+    const closed: Array<{ id: string; symbol: string; net_pnl: string }> = payload?.data ?? [];
+    // A winner and a loser, because they render differently: formatMoney puts the sign outside the
+    // currency symbol, so a loss is "-$128.21". Checking only the first trade passed for a long
+    // time purely because that trade happened to be profitable.
+    const winner = closed.find((t) => Number(t.net_pnl) > 0);
+    const loser = closed.find((t) => Number(t.net_pnl) < 0);
+    test.skip(!winner || !loser, "the demo seed produced no closed winner and loser to compare");
 
-    await page.goto(`/journal/${trade.id}`);
-    await expect(page.getByRole("heading", { level: 1 })).toContainText(trade.symbol);
+    for (const trade of [winner!, loser!]) {
+      await page.goto(`/journal/${trade.id}`);
+      await expect(page.getByRole("heading", { level: 1 })).toContainText(trade.symbol);
 
-    const body = await page.locator("body").innerText();
-
-    // net_pnl arrives at full precision — "320.3263246069" for a fractional crypto size — and the
-    // page shows it rounded to the currency's minor unit. The expectation is computed here rather
-    // than borrowed from the app, so this still fails if the page derives the figure from
-    // anything other than the net_pnl the API sent.
-    expect(body).toContain(toCents(String(trade.net_pnl)));
+      // net_pnl arrives at full precision — "320.3263246069" for a fractional crypto size — and
+      // the page shows it rounded to the currency's minor unit. The expectation is computed here
+      // rather than borrowed from the app, so this still fails if the page derives the figure from
+      // anything other than the net_pnl the API sent.
+      //
+      // The currency symbol is stripped from the page text rather than guessed at, so the sign and
+      // every digit still have to match while the assertion stays independent of where the symbol
+      // sits relative to the sign.
+      const body = (await page.locator("body").innerText()).replace(/[$£€¥]/g, "");
+      expect(body).toContain(toCents(String(trade.net_pnl)));
+    }
   });
 
   test("an undefined R multiple renders as a dash, not as zero", async ({ authedPage: page }) => {
