@@ -602,6 +602,19 @@ export interface AdminInvite {
   redeemed_by: string[];
 }
 
+export interface FeedbackReport {
+  id: UUID;
+  kind: "bug" | "idea" | "question" | "other";
+  message: string;
+  page: string | null;
+  /** Whatever the client attached. Untrusted: rendered as data, never interpreted. */
+  context: Record<string, string>;
+  status: "new" | "reviewed" | "closed";
+  reporter_email: string | null;
+  organization_id: UUID | null;
+  created_at: string;
+}
+
 export interface CandleInspection {
   headers: string[];
   delimiter: string;

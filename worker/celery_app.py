@@ -19,10 +19,13 @@ from celery.signals import setup_logging, task_failure, task_postrun, task_preru
 
 from tradeloom.core.config import get_settings
 from tradeloom.core.logging import configure_logging, get_logger
+from tradeloom.core.observability import init_sentry
 from worker.runtime import run_async
 
 settings = get_settings()
 logger = get_logger("tradeloom.worker")
+
+init_sentry("worker")
 
 celery_app = Celery("tradeloom")
 

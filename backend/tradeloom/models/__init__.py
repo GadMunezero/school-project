@@ -31,6 +31,7 @@ from tradeloom.models.organization import (
 from tradeloom.models.platform import (
     AnalyticsSnapshot,
     AuditLog,
+    FeedbackReport,
     InviteCode,
     InviteRedemption,
     JobRecord,
@@ -55,6 +56,7 @@ __all__ = [
     "DrawdownPoint",
     "EmailToken",
     "EquityPoint",
+    "FeedbackReport",
     "FileObject",
     "Import",
     "ImportRow",

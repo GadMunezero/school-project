@@ -75,6 +75,14 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit: int = Field(default=1680, alias="CELERY_TASK_SOFT_TIME_LIMIT")
     celery_task_always_eager: bool = Field(default=False, alias="CELERY_TASK_ALWAYS_EAGER")
 
+    # --- error reporting ---------------------------------------------------
+    #: Blank switches error reporting off entirely; nothing is sent anywhere.
+    sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
+    sentry_release: str | None = Field(default=None, alias="SENTRY_RELEASE")
+    sentry_traces_sample_rate: float = Field(
+        default=0.05, ge=0.0, le=1.0, alias="SENTRY_TRACES_SAMPLE_RATE"
+    )
+
     # --- signup ------------------------------------------------------------
     #: ``open`` lets anyone register; ``invite`` requires a code an administrator issued.
     #:

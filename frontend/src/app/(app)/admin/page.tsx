@@ -10,6 +10,7 @@ import { queryKeys } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import type {
   AdminInvite,
+  FeedbackReport,
   AdminJobRow,
   AdminOrganizationRow,
   AdminOverview,
@@ -58,6 +59,7 @@ export default function AdminPage() {
           { id: "overview", label: "Overview" },
           { id: "users", label: "Users" },
           { id: "workspaces", label: "Workspaces" },
+          { id: "feedback", label: "Feedback" },
           { id: "invites", label: "Invites" },
           { id: "jobs", label: "Jobs" },
           { id: "audit", label: "Audit log" },
@@ -68,6 +70,7 @@ export default function AdminPage() {
         {tab === "overview" ? <OverviewTab /> : null}
         {tab === "users" ? <UsersTab /> : null}
         {tab === "workspaces" ? <WorkspacesTab /> : null}
+        {tab === "feedback" ? <FeedbackTab /> : null}
         {tab === "invites" ? <InvitesTab /> : null}
         {tab === "jobs" ? <JobsTab /> : null}
         {tab === "audit" ? <AuditTab /> : null}
@@ -428,6 +431,122 @@ function PlanModal({
 }
 
 const JOB_STATUSES = ["", "queued", "running", "completed", "failed", "cancelled"];
+
+const FEEDBACK_TONE: Record<string, "loss" | "accent" | "info" | "neutral"> = {
+  bug: "loss",
+  idea: "accent",
+  question: "info",
+  other: "neutral",
+};
+
+const FEEDBACK_STATUSES = ["new", "reviewed", "closed"] as const;
+
+/** What users are telling us, newest first. */
+function FeedbackTab() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [statusFilter, setStatusFilter] = useState("new");
+
+  const reports = useQuery({
+    queryKey: queryKeys.adminFeedback({ status: statusFilter }),
+    queryFn: () =>
+      api.list<FeedbackReport>("/api/v1/admin/feedback", {
+        page_size: 50,
+        ...(statusFilter ? { status: statusFilter } : {}),
+      }),
+    refetchInterval: 60_000,
+  });
+
+  const triage = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.post(`/api/v1/admin/feedback/${id}/status`, { status }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "feedback"] });
+    },
+    onError: (error) => toast.fromError(error, "Could not update that report"),
+  });
+
+  const rows = reports.data?.data ?? [];
+
+  return (
+    <>
+      <div className="mb-3 max-w-xs">
+        <Select
+          aria-label="Filter by status"
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+        >
+          <option value="">Everything</option>
+          {FEEDBACK_STATUSES.map((option) => (
+            <option key={option} value={option}>
+              {humanise(option)}
+            </option>
+          ))}
+        </Select>
+      </div>
+
+      {reports.isError ? (
+        <ErrorState error={reports.error} onRetry={() => void reports.refetch()} />
+      ) : reports.isLoading ? (
+        <Skeleton className="h-40 rounded" />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={statusFilter === "new" ? "Nothing waiting" : "No reports"}
+          description="Feedback sent from inside the app lands here."
+        />
+      ) : (
+        <div className="space-y-3">
+          {rows.map((report) => (
+            <Card key={report.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge tone={FEEDBACK_TONE[report.kind] ?? "neutral"}>
+                      {humanise(report.kind)}
+                    </Badge>
+                    <span className="text-xs text-muted">
+                      {report.reporter_email ?? "unknown"} · {formatRelative(report.created_at)}
+                      {report.page ? ` · ${report.page}` : ""}
+                    </span>
+                  </span>
+                  {/* Rendered as text. This is whatever a user typed. */}
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-ink">{report.message}</p>
+                  {Object.keys(report.context).length > 0 ? (
+                    <p className="mt-2 text-2xs text-faint">
+                      {Object.entries(report.context)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {report.status !== "reviewed" ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => triage.mutate({ id: report.id, status: "reviewed" })}
+                    >
+                      Reviewed
+                    </Button>
+                  ) : null}
+                  {report.status !== "closed" ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => triage.mutate({ id: report.id, status: "closed" })}
+                    >
+                      Close
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 const INVITE_TONE: Record<string, "profit" | "neutral" | "warn" | "loss"> = {
   active: "profit",

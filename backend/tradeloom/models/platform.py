@@ -302,9 +302,53 @@ class InviteRedemption(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     email: Mapped[str | None] = mapped_column(String(320), nullable=True)
 
 
+class FeedbackReport(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Something a user told us, from inside the product.
+
+    In a beta the feedback loop is the product, and a report that has to be typed into a separate
+    tool is a report that does not get filed. Kept alongside the workspace it came from so a bug
+    can be reproduced against real data, and carrying the page it was sent from because "it is
+    broken" without a URL costs an email to answer.
+
+    ``context`` is written by the client and is therefore untrusted: it is stored, shown to staff,
+    and never executed or interpolated anywhere.
+    """
+
+    __tablename__ = "feedback_reports"
+    __table_args__ = (
+        Index("ix_feedback_reports_status_created", "status", "created_at"),
+        Index("ix_feedback_reports_org", "organization_id"),
+    )
+
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    #: Retained after erasure so a report does not lose its reporter entirely.
+    reporter_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+
+    #: "bug" | "idea" | "question" | "other"
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="other")
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Where they were when they sent it.
+    page: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: Browser, viewport, app version — whatever the client thought was worth attaching.
+    context: Mapped[dict] = mapped_column(JSONDict(), nullable=False, default=dict)
+
+    #: "new" | "reviewed" | "closed"
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="new")
+    reviewed_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 __all__ = [
     "AnalyticsSnapshot",
     "AuditLog",
+    "FeedbackReport",
     "InviteCode",
     "InviteRedemption",
     "JobRecord",

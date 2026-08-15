@@ -20,6 +20,7 @@ from tradeloom.api.v1.router import api_router
 from tradeloom.api.v1.routers import health
 from tradeloom.core.config import get_settings
 from tradeloom.core.logging import configure_logging, get_logger
+from tradeloom.core.observability import init_sentry
 from tradeloom.db.session import dispose_engine
 
 logger = get_logger(__name__)
@@ -40,6 +41,7 @@ backtesting.
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    init_sentry("api")
     settings = get_settings()
 
     problems = settings.validate_for_production()

@@ -35,9 +35,13 @@ dependencies = [
 [project.optional-dependencies]
 worker = ["celery[redis]>=5.4"]
 billing = ["stripe>=10.5"]
+# Error reporting is opt-in. Without SENTRY_DSN nothing is sent, and without this extra
+# installed the setting logs a warning rather than failing to boot.
+monitoring = ["sentry-sdk[fastapi]>=2.14"]
 dev = [
     "celery[redis]>=5.4",
     "stripe>=10.5",
+    "sentry-sdk[fastapi]>=2.14",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",

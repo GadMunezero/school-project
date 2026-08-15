@@ -11,6 +11,7 @@ from tradeloom.api.v1.routers import (
     auth,
     backtests,
     billing,
+    feedback,
     files,
     imports,
     instruments,
@@ -54,6 +55,7 @@ api_router.include_router(files.router)
 api_router.include_router(search.router)
 api_router.include_router(notifications.router)
 api_router.include_router(billing.router)
+api_router.include_router(feedback.router)
 api_router.include_router(admin.router)
 
 __all__ = ["api_router"]

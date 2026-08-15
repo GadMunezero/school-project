@@ -27,7 +27,13 @@ from tradeloom.core.timeutil import utcnow
 from tradeloom.models.identity import LoginAttempt, User
 from tradeloom.models.imports import Import
 from tradeloom.models.organization import Organization, OrganizationMember
-from tradeloom.models.platform import AuditLog, InviteRedemption, JobRecord, Subscription
+from tradeloom.models.platform import (
+    AuditLog,
+    FeedbackReport,
+    InviteRedemption,
+    JobRecord,
+    Subscription,
+)
 from tradeloom.models.trading import Trade
 from tradeloom.schemas.common import (
     DataResponse,
@@ -52,6 +58,10 @@ class UserStatusUpdate(TradeloomModel):
 class PlanOverride(TradeloomModel):
     plan: SubscriptionPlan
     reason: str = Field(min_length=3, max_length=255)
+
+
+class FeedbackStatusUpdate(TradeloomModel):
+    status: str = Field(pattern="^(new|reviewed|closed)$")
 
 
 class InviteCreate(TradeloomModel):
@@ -417,6 +427,76 @@ async def revoke_invite(
     )
     await session.commit()
     return DataResponse(data=InviteService.to_dict(invite))
+
+
+@router.get("/feedback", response_model=ListResponse[dict], summary="Feedback from users")
+async def list_feedback(
+    admin: AdminUser,
+    session: DbSession,
+    paging: Paging,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+) -> ListResponse[dict]:
+    stmt = select(FeedbackReport)
+    if status_filter:
+        stmt = stmt.where(FeedbackReport.status == status_filter)
+
+    total = await session.scalar(select(func.count()).select_from(stmt.subquery()))
+    result = await session.execute(
+        stmt.order_by(FeedbackReport.created_at.desc())
+        .offset(paging.offset)
+        .limit(paging.page_size)
+    )
+    reports = list(result.scalars().all())
+    total_count = int(total or 0)
+
+    return ListResponse(
+        data=[
+            {
+                "id": str(report.id),
+                "kind": report.kind,
+                "message": report.message,
+                "page": report.page,
+                "context": report.context,
+                "status": report.status,
+                "reporter_email": report.reporter_email,
+                "organization_id": (
+                    str(report.organization_id) if report.organization_id else None
+                ),
+                "created_at": report.created_at.isoformat(),
+            }
+            for report in reports
+        ],
+        meta=PageMeta(
+            page=paging.page,
+            page_size=paging.page_size,
+            total=total_count,
+            total_pages=(total_count + paging.page_size - 1) // paging.page_size,
+            has_next=paging.offset + len(reports) < total_count,
+        ),
+    )
+
+
+@router.post(
+    "/feedback/{report_id}/status",
+    response_model=DataResponse[dict],
+    summary="Triage a feedback report",
+)
+async def set_feedback_status(
+    report_id: uuid.UUID,
+    payload: FeedbackStatusUpdate,
+    admin: AdminUser,
+    session: DbSession,
+) -> DataResponse[dict]:
+    report = await session.get(FeedbackReport, report_id)
+    if report is None:
+        raise NotFoundError("Feedback report not found.")
+
+    report.status = payload.status
+    report.reviewed_at = utcnow() if payload.status != "new" else None
+    report.reviewed_by_user_id = admin.id if payload.status != "new" else None
+    await session.commit()
+
+    return DataResponse(data={"id": str(report.id), "status": report.status})
 
 
 __all__ = ["router"]
