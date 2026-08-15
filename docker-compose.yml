@@ -29,6 +29,67 @@ x-backend-env: &backend-env
   STRIPE_PRICE_PRO_MONTHLY: ${STRIPE_PRICE_PRO_MONTHLY:-}
   STRIPE_PRICE_ENTERPRISE_MONTHLY: ${STRIPE_PRICE_ENTERPRISE_MONTHLY:-}
 
+  # Everything below is declared with no value on purpose. Compose passes such a variable through
+  # when it is set and omits it entirely when it is not, so the application's own default applies
+  # rather than a second copy of that default living here and drifting out of step with it.
+  #
+  # These were simply absent before, and absent is silent: SIGNUP_MODE never reached the container,
+  # so a closed beta launched with Compose had open registration; SMTP_USER and SMTP_PASSWORD never
+  # arrived either, so a correctly configured mail provider could not authenticate and password
+  # resets failed; and SENTRY_DSN never arrived, so error reporting stayed off however it was set.
+  SIGNUP_MODE:
+
+  EMAIL_ENABLED:
+  SMTP_USER:
+  SMTP_PASSWORD:
+  SMTP_TLS:
+  SMTP_FROM_NAME:
+  EMAIL_VERIFY_TTL_SECONDS:
+  PASSWORD_RESET_TTL_SECONDS:
+
+  SENTRY_DSN:
+  SENTRY_RELEASE:
+  SENTRY_TRACES_SAMPLE_RATE:
+
+  SESSION_COOKIE_NAME:
+  SESSION_TTL_SECONDS:
+  SESSION_IDLE_TIMEOUT_SECONDS:
+  SESSION_ROTATE_AFTER_SECONDS:
+  CSRF_COOKIE_NAME:
+  COOKIE_DOMAIN:
+
+  RATE_LIMIT_ENABLED:
+  RATE_LIMIT_DEFAULT:
+  RATE_LIMIT_LOGIN:
+  RATE_LIMIT_SIGNUP:
+  LOGIN_LOCKOUT_THRESHOLD:
+  LOGIN_LOCKOUT_SECONDS:
+
+  OAUTH_GOOGLE_CLIENT_ID:
+  OAUTH_GOOGLE_CLIENT_SECRET:
+  OAUTH_GITHUB_CLIENT_ID:
+  OAUTH_GITHUB_CLIENT_SECRET:
+  OAUTH_REDIRECT_BASE_URL:
+
+  S3_REGION:
+  S3_SIGNED_URL_TTL_SECONDS:
+  UPLOAD_MAX_BYTES:
+  UPLOAD_ALLOWED_MIME:
+
+  STRIPE_PUBLISHABLE_KEY:
+  STRIPE_PRICE_PRO_YEARLY:
+  BILLING_SUCCESS_URL:
+  BILLING_CANCEL_URL:
+
+  DATABASE_POOL_SIZE:
+  DATABASE_MAX_OVERFLOW:
+  MARKET_DATA_DEFAULT_SOURCE:
+  ARGON2_TIME_COST:
+  ARGON2_MEMORY_COST_KIB:
+  ARGON2_PARALLELISM:
+  CELERY_TASK_TIME_LIMIT:
+  CELERY_TASK_SOFT_TIME_LIMIT:
+
 services:
   postgres:
     image: postgres:16-alpine

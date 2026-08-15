@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+# Development-only values, deliberately committed so evaluating the app needs no setup. Every
+# value in it is refused by validate_for_production(), so it cannot become a deployment.
+!.env.demo
 
 # Python
 __pycache__/

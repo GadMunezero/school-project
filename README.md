@@ -62,14 +62,26 @@ succeeds here, and one that fails, fails identically.
 
 ## Quick start (Docker — the whole system)
 
-```bash
-scripts/demo.sh
+Two commands, and they are the same on Windows, macOS and Linux — `cmd`, PowerShell or a shell:
+
 ```
+docker compose --env-file .env.demo up -d --build
+docker compose --env-file .env.demo exec api python -m tradeloom.cli seed --demo
+```
+
+Then open **http://localhost:8080** and sign in with `demo@example.com` / `DemoTrader!2024`.
+
+`.env.demo` is committed so there is nothing to fill in first. Every value in it is a development
+value that `validate_for_production()` refuses to start a production process with, so it cannot
+quietly become a deployment.
+
+On macOS or Linux, `scripts/demo.sh` does the same thing plus a generated `SECRET_KEY`, a
+readiness wait and a seed only when the database is empty. It is a bash script, so run it from Git
+Bash or WSL on Windows rather than `cmd`.
 
 Docker is the only prerequisite. This is the closest thing to running the real product: Postgres,
 Redis, MinIO (S3-compatible), a mail catcher, the API, the **Celery worker**, the Next.js frontend
-and an nginx proxy. It writes a `.env` with a generated `SECRET_KEY`, waits for the stack to come
-up, seeds a demo workspace if the database is empty, and prints where to go.
+and an nginx proxy.
 
 Everything is served from **one origin**, `http://localhost:8080` — nginx routes `/api/` to the API
 and everything else to the frontend. That is worth knowing: because the browser only ever talks to

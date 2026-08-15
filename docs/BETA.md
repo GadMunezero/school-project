@@ -12,22 +12,35 @@ Stage 3 is where the decisions are. Stages 1 and 2 take about ten minutes.
 You need [Docker](https://docs.docker.com/get-docker/). Nothing else — no Python, no Node, no
 database to install.
 
-```bash
+These commands are identical on Windows, macOS and Linux, and work in `cmd` and PowerShell as
+well as a shell:
+
+```
 git clone https://github.com/GadMunezero/school-project.git tradeloom
 cd tradeloom
-scripts/demo.sh
+docker compose --env-file .env.demo up -d --build
+docker compose --env-file .env.demo exec api python -m tradeloom.cli seed --demo
 ```
 
-The first run pulls images and builds two of its own, so it takes a few minutes. When it finishes
-it prints where to go. Open **http://localhost:8080** and sign in:
+The first run pulls images and builds two of its own, so it takes a few minutes. Then open
+**http://localhost:8080** and sign in:
 
 ```
 demo@example.com
 DemoTrader!2024
 ```
 
-If it does not come up, `docker compose logs api` is the first place to look. The script fails
-loudly rather than half-starting.
+If it does not come up, `docker compose logs api` is the first place to look.
+
+`scripts/demo.sh` does all of the above in one step, plus a generated `SECRET_KEY` and a seed only
+when the database is empty — but it is a bash script, so on Windows run it from Git Bash or WSL,
+not `cmd`.
+
+To stop, keeping your data:
+
+```
+docker compose --env-file .env.demo down
+```
 
 | Also running | |
 | --- | --- |
