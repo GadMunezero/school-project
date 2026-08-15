@@ -343,6 +343,74 @@ class AnalyticsService:
             for trade in result.scalars().all()
         ]
 
+    async def day_detail(
+        self, day: date, filters: TradeFilters, *, timezone: str | None = None
+    ) -> dict[str, Any]:
+        """Everything behind one calendar cell.
+
+        The selection is made with ``trading_day`` rather than a SQL range on exit_timestamp, for
+        the same reason the cell is built that way: a futures session opens at 18:00 the previous
+        evening, so a trade closed at 19:00 on Monday belongs to Tuesday. Filtering by calendar
+        date would hand back a different set of trades than the cell counted, and the drill-down
+        would contradict the number the user clicked on.
+        """
+        zone = timezone or await self._primary_timezone(filters)
+        rows = [
+            trade
+            for trade in await self._load_closed_trades(filters)
+            if trading_day(trade.exit_timestamp or trade.entry_timestamp, trade.asset_type, zone)
+            == day
+        ]
+        rows.sort(key=lambda t: (t.exit_timestamp or t.entry_timestamp))
+
+        net = quantize_money(sum((trade.net_pnl for trade in rows), ZERO))
+        gross = quantize_money(sum((trade.gross_pnl for trade in rows), ZERO))
+        costs = quantize_money(
+            sum(((trade.commission or ZERO) + (trade.fees or ZERO) for trade in rows), ZERO)
+        )
+        wins = [t for t in rows if t.net_pnl > 0]
+        losses = [t for t in rows if t.net_pnl < 0]
+
+        return {
+            "date": day.isoformat(),
+            "timezone": zone,
+            "summary": {
+                "net_pnl": _s(net),
+                "gross_pnl": _s(gross),
+                "costs": _s(costs),
+                "trades": len(rows),
+                "wins": len(wins),
+                "losses": len(losses),
+                # None rather than 0 when there is nothing to divide — an undefined rate is not
+                # a rate of zero.
+                "win_rate": _s(safe_div(Decimal(len(wins)) * HUNDRED, Decimal(len(rows)))),
+                "best": _s(max((t.net_pnl for t in rows), default=None)) if rows else None,
+                "worst": _s(min((t.net_pnl for t in rows), default=None)) if rows else None,
+            },
+            "by_symbol": _group_rows(rows, lambda t: t.symbol),
+            "trades": [
+                {
+                    "id": str(trade.id),
+                    "symbol": trade.symbol,
+                    "asset_type": trade.asset_type.value if trade.asset_type else None,
+                    "direction": trade.direction.value,
+                    "quantity": _s(trade.closed_quantity),
+                    "entry_price": _s(trade.entry_price),
+                    "exit_price": _s(trade.exit_price),
+                    "gross_pnl": _s(trade.gross_pnl),
+                    "commission": _s(trade.commission),
+                    "fees": _s(trade.fees),
+                    "net_pnl": _s(trade.net_pnl),
+                    "r_multiple": _s(trade.r_multiple),
+                    "entry_timestamp": trade.entry_timestamp.isoformat(),
+                    "exit_timestamp": (
+                        trade.exit_timestamp.isoformat() if trade.exit_timestamp else None
+                    ),
+                }
+                for trade in rows
+            ],
+        }
+
     async def compare(
         self, left: TradeFilters, right: TradeFilters, *, left_label: str, right_label: str
     ) -> dict[str, Any]:

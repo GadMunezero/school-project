@@ -440,6 +440,43 @@ export interface CalendarDay {
   wins: number;
 }
 
+/** Everything behind one calendar cell, selected server-side by trading day. */
+export interface CalendarDayDetail {
+  date: string;
+  timezone: string;
+  summary: {
+    net_pnl: DecimalString;
+    gross_pnl: DecimalString;
+    costs: DecimalString;
+    trades: number;
+    wins: number;
+    losses: number;
+    /** Null, not zero, when there is nothing to divide. */
+    win_rate: DecimalString | null;
+    best: DecimalString | null;
+    worst: DecimalString | null;
+  };
+  by_symbol: BreakdownRow[];
+  trades: CalendarDayTrade[];
+}
+
+export interface CalendarDayTrade {
+  id: string;
+  symbol: string;
+  asset_type: string | null;
+  direction: string;
+  quantity: DecimalString | null;
+  entry_price: DecimalString | null;
+  exit_price: DecimalString | null;
+  gross_pnl: DecimalString | null;
+  commission: DecimalString | null;
+  fees: DecimalString | null;
+  net_pnl: DecimalString;
+  r_multiple: DecimalString | null;
+  entry_timestamp: string;
+  exit_timestamp: string | null;
+}
+
 export interface AnalyticsResult {
   metrics: MetricMap;
   breakdowns: Record<string, BreakdownRow[] | unknown>;

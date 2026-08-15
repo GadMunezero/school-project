@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, BookOpen, TrendingUp } from "lucide-react";
+import { BookOpen } from "lucide-react";
 
 import { api } from "@/lib/api";
 import {
@@ -24,6 +24,7 @@ import type { BreakdownRow, CalendarDay, DashboardResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { BreakdownBars } from "@/components/charts/bar-chart";
 import { SeriesChart } from "@/components/charts/series-chart";
+import { PnlCalendar } from "@/components/dashboard/pnl-calendar";
 import { Card, CardHeader, MetricCard } from "@/components/ui/card";
 import { EmptyState, ErrorState, MetricsSkeleton, Skeleton } from "@/components/ui/feedback";
 import { Button, Select } from "@/components/ui/primitives";
@@ -189,8 +190,15 @@ export default function DashboardPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Daily P&L" description="Realised result per trading day." />
-              <PnlCalendar days={(result?.breakdowns.calendar as CalendarDay[]) ?? []} currency={currency} />
+              <CardHeader
+                title="Daily P&L"
+                description="Realised result per trading day. Select a day for the trades behind it."
+              />
+              <PnlCalendar
+                days={(result?.breakdowns.calendar as CalendarDay[]) ?? []}
+                currency={currency}
+                params={{ days }}
+              />
             </Card>
           </section>
 
@@ -313,39 +321,3 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-/** Calendar heatmap of daily P&L. Days with no trading are blank, not zero. */
-function PnlCalendar({ days, currency }: { days: CalendarDay[]; currency: string }) {
-  if (days.length === 0) {
-    return <p className="py-6 text-center text-xs text-faint">No closed trades in this period.</p>;
-  }
-
-  const recent = days.slice(-70);
-  const largest = Math.max(...recent.map((day) => Math.abs(Number(day.net_pnl ?? 0))), 1);
-
-  return (
-    <div>
-      <div className="grid grid-cols-10 gap-1">
-        {recent.map((day) => {
-          const value = Number(day.net_pnl ?? 0);
-          const intensity = Math.min(Math.abs(value) / largest, 1);
-          return (
-            <div
-              key={day.date}
-              title={`${day.date}: ${formatMoney(day.net_pnl, currency, { signed: true })} · ${day.trades} trades`}
-              className={cn(
-                "aspect-square rounded-sm border border-line/50",
-                value > 0 ? "bg-profit" : value < 0 ? "bg-loss" : "bg-raised",
-              )}
-              style={value === 0 ? undefined : { opacity: 0.25 + intensity * 0.75 }}
-            />
-          );
-        })}
-      </div>
-      <p className="mt-2 flex items-center gap-2 text-2xs text-faint">
-        <TrendingUp className="h-3 w-3" aria-hidden />
-        Last {recent.length} trading days
-        <ArrowRight className="ml-auto h-3 w-3" aria-hidden />
-      </p>
-    </div>
-  );
-}

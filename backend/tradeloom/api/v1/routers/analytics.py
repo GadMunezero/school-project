@@ -7,6 +7,7 @@ feature request.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -37,6 +38,21 @@ async def dashboard(
 ) -> DataResponse[dict]:
     service = AnalyticsService(tenant.session, tenant.organization_id)
     return DataResponse(data=await service.dashboard(filters, days=days))
+
+
+@router.get(
+    "/calendar/{day}",
+    response_model=DataResponse[dict],
+    summary="Every trade behind one calendar day",
+)
+async def calendar_day(tenant: Tenant, filters: Filters, day: date) -> DataResponse[dict]:
+    """The trades a calendar cell was built from.
+
+    Selected by trading day, not calendar date, so this can never disagree with the cell it was
+    opened from — a futures trade closed at 19:00 belongs to the next session.
+    """
+    service = AnalyticsService(tenant.session, tenant.organization_id)
+    return DataResponse(data=await service.day_detail(day, filters))
 
 
 @router.get(

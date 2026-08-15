@@ -9,12 +9,15 @@ funded account with a daily loss limit, as a number that is simply not the one t
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
+
+import pytest
 
 from tradeloom.core.enums import AssetType, Direction, TradeStatus
 from tradeloom.core.timeutil import trading_day
 from tradeloom.models.trading import Trade
+from tradeloom.schemas.trade import TradeFilters
 from tradeloom.services.analytics import AnalyticsService
 
 ZONE = "America/New_York"
@@ -167,3 +170,127 @@ class TestEquityCurveDays:
         samples = service._build_equity_curve(rows, Decimal("100000"), ZONE)
 
         assert {s.trading_day.isoformat() for s in samples if s.trading_day} == {"2026-03-16"}
+
+
+def priced(
+    *,
+    asset_type: AssetType,
+    exit_at: datetime,
+    net_pnl: str,
+    symbol: str = "TEST",
+    commission: str = "0",
+    fees: str = "0",
+) -> Trade:
+    """A closed trade carrying the cost fields the day drill-down sums."""
+    row = trade(asset_type=asset_type, exit_at=exit_at, net_pnl=net_pnl, symbol=symbol)
+    row.commission = Decimal(commission)
+    row.fees = Decimal(fees)
+    row.gross_pnl = Decimal(net_pnl) + row.commission + row.fees
+    return row
+
+
+class TestDayDetailAgreesWithItsCell:
+    """A drill-down that disagrees with the number clicked is worse than no drill-down.
+
+    The calendar cell is bucketed by trading day, so the detail has to select the same way. Doing
+    it with a SQL range on exit_timestamp would quietly return a different set of trades for every
+    futures and FX session, and the two views would contradict each other on screen.
+    """
+
+    def _service(self, rows: list[Trade]) -> AnalyticsService:
+        service = AnalyticsService(session=None, organization_id=uuid.uuid4())  # type: ignore[arg-type]
+
+        async def _load(_filters: object) -> list[Trade]:
+            return rows
+
+        service._load_closed_trades = _load  # type: ignore[assignment,method-assign]
+        return service
+
+    def _rows(self) -> list[Trade]:
+        monday_evening = datetime(2026, 3, 16, 23, 0, tzinfo=UTC)  # Mon 19:00 NY
+        tuesday_morning = datetime(2026, 3, 17, 14, 30, tzinfo=UTC)  # Tue 10:30 NY
+        return [
+            # Futures after the 18:00 open: belongs to Tuesday's session, not Monday's.
+            priced(
+                asset_type=AssetType.FUTURES,
+                exit_at=monday_evening,
+                net_pnl="400",
+                symbol="MQ1",
+                commission="4.20",
+            ),
+            # Same instant, an equity: Monday, because the equity day is over.
+            priced(
+                asset_type=AssetType.EQUITY,
+                exit_at=monday_evening,
+                net_pnl="100",
+                symbol="NVLX",
+                commission="1.00",
+            ),
+            # FX rolls an hour earlier still, so 19:00 NY is also Tuesday.
+            priced(
+                asset_type=AssetType.FOREX,
+                exit_at=monday_evening,
+                net_pnl="-60.50",
+                symbol="EURUSD",
+                commission="3.50",
+            ),
+            priced(
+                asset_type=AssetType.EQUITY,
+                exit_at=tuesday_morning,
+                net_pnl="-25.25",
+                symbol="HELIA",
+                fees="0.75",
+            ),
+        ]
+
+    @pytest.mark.anyio
+    async def test_every_cell_is_exactly_the_sum_of_its_drill_down(self) -> None:
+        rows = self._rows()
+        service = self._service(rows)
+        cells = service._calendar(rows, ZONE)
+        assert len(cells) == 2, cells
+
+        for cell in cells:
+            day = date.fromisoformat(cell["date"])
+            detail = await service.day_detail(day, TradeFilters(), timezone=ZONE)
+
+            assert detail["summary"]["net_pnl"] == cell["net_pnl"], day
+            assert detail["summary"]["trades"] == cell["trades"], day
+            assert detail["summary"]["wins"] == cell["wins"], day
+            # And the listed trades really do add up to the headline, not just agree with it.
+            total = sum(Decimal(t["net_pnl"]) for t in detail["trades"])
+            assert total == Decimal(cell["net_pnl"]), day
+
+    @pytest.mark.anyio
+    async def test_the_evening_futures_trade_appears_under_the_next_session(self) -> None:
+        service = self._service(self._rows())
+
+        monday = await service.day_detail(date(2026, 3, 16), TradeFilters(), timezone=ZONE)
+        tuesday = await service.day_detail(date(2026, 3, 17), TradeFilters(), timezone=ZONE)
+
+        assert [t["symbol"] for t in monday["trades"]] == ["NVLX"]
+        # Futures and FX both rolled; the equity closed at the same instant did not.
+        assert sorted(t["symbol"] for t in tuesday["trades"]) == ["EURUSD", "HELIA", "MQ1"]
+
+    @pytest.mark.anyio
+    async def test_a_day_with_no_trades_reports_nothing_rather_than_zero(self) -> None:
+        service = self._service(self._rows())
+
+        empty = await service.day_detail(date(2026, 3, 18), TradeFilters(), timezone=ZONE)
+
+        assert empty["trades"] == []
+        assert empty["summary"]["trades"] == 0
+        # An undefined win rate is not a win rate of zero.
+        assert empty["summary"]["win_rate"] is None
+        assert empty["summary"]["best"] is None
+
+    @pytest.mark.anyio
+    async def test_costs_are_reported_and_reconcile_gross_to_net(self) -> None:
+        service = self._service(self._rows())
+
+        tuesday = await service.day_detail(date(2026, 3, 17), TradeFilters(), timezone=ZONE)
+        summary = tuesday["summary"]
+
+        assert Decimal(summary["gross_pnl"]) - Decimal(summary["costs"]) == Decimal(
+            summary["net_pnl"]
+        )

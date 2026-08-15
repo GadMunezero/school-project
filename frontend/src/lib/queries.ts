@@ -35,6 +35,8 @@ export const queryKeys = {
   replay: (id: string) => ["replay", id] as const,
   analytics: (params: QueryParams) => ["analytics", params] as const,
   dashboard: (params: QueryParams) => ["analytics", "dashboard", params] as const,
+  calendarDay: (day: string, params: QueryParams) =>
+    ["analytics", "calendar", day, params] as const,
   reports: ["reports"] as const,
   report: (key: string, params: QueryParams) => ["reports", key, params] as const,
   marketDataSources: ["market-data", "sources"] as const,
