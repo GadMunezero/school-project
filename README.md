@@ -120,6 +120,10 @@ which is what the test suite uses — no Postgres required to run `pytest`.
 
 ## Running a closed beta
 
+**[docs/BETA.md](docs/BETA.md) is the step-by-step version** — from a fresh clone to testers signing
+in with invite codes, including how to serve it at an address other than `localhost`. The rest of
+this section is the mechanism behind it.
+
 Registration is open by default, which is what the code has always done. Set `SIGNUP_MODE=invite`
 and the only way in is a code an administrator issued — `.env.example` ships that way, so a fresh
 install starts closed.
