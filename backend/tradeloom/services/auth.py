@@ -117,6 +117,17 @@ class AuthService:
 
     async def signup(self, payload: SignupRequest, context: RequestContext) -> User:
         email = normalize_email(payload.email)
+
+        # The invite is claimed before anything is created. Checking it afterwards would leave a
+        # user row behind whenever the code turned out to be spent.
+        invite = None
+        if get_settings().signup_is_invite_only:
+            from tradeloom.services.invites import InviteService
+
+            invite = await InviteService(self.session).redeem(
+                payload.invite_code or "", email=email
+            )
+
         existing = await self.get_user_by_email(email)
         if existing is not None:
             # Registration is not an enumeration oracle in the UI copy, but returning 409 here is
@@ -139,6 +150,11 @@ class AuthService:
         organization = await self.create_personal_organization(
             user, payload.organization_name, timezone=payload.timezone
         )
+
+        if invite is not None:
+            from tradeloom.services.invites import InviteService
+
+            await InviteService(self.session).attach_user(invite, user.id, email)
 
         token = await self.issue_email_token(user, PURPOSE_VERIFY_EMAIL, context)
         self.email_service.send_verification(user.email, user.display_name, token)

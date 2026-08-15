@@ -109,6 +109,32 @@ which is what the test suite uses — no Postgres required to run `pytest`.
 
 ---
 
+## Running a closed beta
+
+Registration is open by default, which is what the code has always done. Set `SIGNUP_MODE=invite`
+and the only way in is a code an administrator issued — `.env.example` ships that way, so a fresh
+install starts closed.
+
+```bash
+# Make yourself staff, once.
+python -m tradeloom.cli create-admin --email you@example.com
+
+# Mint a code, either from the CLI…
+python -m tradeloom.cli invite --note "Jamie, from the futures forum"
+
+# …or under Administration → Invites, which also shows who redeemed what.
+```
+
+An invite is single-use and expires in 30 days unless you say otherwise; raise `--uses` for a
+cohort. Revoking one stops it working immediately. A code is a ticket, not a credential: it grants
+nothing beyond the right to register, which is why the console shows it in full so you can send it
+to someone.
+
+Every refusal reads the same — unknown, spent, expired and revoked codes are indistinguishable to
+whoever is typing, so the form cannot be used to discover which codes exist.
+
+---
+
 ## Verification commands
 
 | What | Command |

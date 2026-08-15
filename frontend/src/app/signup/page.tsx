@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -30,6 +30,7 @@ const schema = z.object({
     }, "Combine at least three of: lowercase, uppercase, digits, symbols")
     .refine((value) => new Set(value).size >= 6, "Use at least six different characters"),
   organization_name: z.string().max(120).optional(),
+  invite_code: z.string().max(40).optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -40,14 +41,30 @@ export default function SignupPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { full_name: "", email: "", password: "", organization_name: "" },
+    defaultValues: {
+      full_name: "",
+      email: "",
+      password: "",
+      organization_name: "",
+      invite_code: "",
+    },
   });
+
+  // Whether this deployment is running a closed signup. Advisory only — the server enforces it —
+  // but without it the form would either hide a required field or ask everyone for a code.
+  const policy = useQuery({
+    queryKey: ["auth", "signup-policy"],
+    queryFn: () => api.get<{ invite_required: boolean }>("/api/v1/auth/signup-policy"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const inviteRequired = policy.data?.invite_required ?? false;
 
   const signup = useMutation({
     mutationFn: (values: FormValues) =>
       api.post<SessionInfo>("/api/v1/auth/signup", {
         ...values,
         organization_name: values.organization_name || undefined,
+        invite_code: values.invite_code || undefined,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         accepted_terms: true,
       }),
@@ -94,6 +111,25 @@ export default function SignupPage() {
           <p role="alert" className="rounded border border-loss/30 bg-loss/5 p-2.5 text-xs text-loss">
             {form.formState.errors.root.message}
           </p>
+        ) : null}
+
+        {inviteRequired ? (
+          <Field
+            label="Invite code"
+            htmlFor="invite_code"
+            error={form.formState.errors.invite_code?.message}
+            hint="Tradeloom is in a closed beta. Your code came with your invitation."
+            required
+          >
+            <Input
+              id="invite_code"
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="XXXXXXXXXX"
+              {...form.register("invite_code")}
+            />
+          </Field>
         ) : null}
 
         <Field label="Full name" htmlFor="full_name" error={form.formState.errors.full_name?.message} required>

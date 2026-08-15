@@ -105,6 +105,21 @@ async def build_session_info(
     )
 
 
+@router.get(
+    "/signup-policy",
+    response_model=DataResponse[dict],
+    summary="Whether this deployment accepts open registration",
+)
+async def signup_policy(settings: AppSettings) -> DataResponse[dict]:
+    """Lets the signup form ask for a code only when one is needed.
+
+    Public by necessity — it is read before anyone has an account. It reveals only whether the
+    door is open, which is apparent from trying to register anyway, and the answer is advisory:
+    the server enforces the gate whatever the form decides to show.
+    """
+    return DataResponse(data={"invite_required": settings.signup_is_invite_only})
+
+
 @router.post(
     "/signup",
     status_code=status.HTTP_201_CREATED,

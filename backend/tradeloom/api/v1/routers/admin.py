@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 from pydantic import Field
 from sqlalchemy import func, select
 
@@ -27,7 +27,7 @@ from tradeloom.core.timeutil import utcnow
 from tradeloom.models.identity import LoginAttempt, User
 from tradeloom.models.imports import Import
 from tradeloom.models.organization import Organization, OrganizationMember
-from tradeloom.models.platform import AuditLog, JobRecord, Subscription
+from tradeloom.models.platform import AuditLog, InviteRedemption, JobRecord, Subscription
 from tradeloom.models.trading import Trade
 from tradeloom.schemas.common import (
     DataResponse,
@@ -38,6 +38,7 @@ from tradeloom.schemas.common import (
 )
 from tradeloom.services.audit import AuditService
 from tradeloom.services.billing import BillingService
+from tradeloom.services.invites import InviteService
 from tradeloom.services.jobs import JobService
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -51,6 +52,14 @@ class UserStatusUpdate(TradeloomModel):
 class PlanOverride(TradeloomModel):
     plan: SubscriptionPlan
     reason: str = Field(min_length=3, max_length=255)
+
+
+class InviteCreate(TradeloomModel):
+    #: Who it is for, so two outstanding invites can be told apart.
+    note: str | None = Field(default=None, max_length=160)
+    max_uses: int = Field(default=1, ge=1, le=500)
+    #: Null never expires. A beta invite that works forever is a beta that never closed.
+    expires_in_days: int | None = Field(default=30, ge=1, le=365)
 
 
 @router.get("/overview", response_model=DataResponse[dict], summary="System overview")
@@ -338,6 +347,76 @@ async def audit_logs(
             has_next=paging.offset + len(records) < total,
         ),
     )
+
+
+@router.get("/invites", response_model=DataResponse[list[dict]], summary="Outstanding invites")
+async def list_invites(admin: AdminUser, session: DbSession) -> DataResponse[list[dict]]:
+    service = InviteService(session, actor_user_id=admin.id)
+    invites = await service.list()
+
+    # Who each code let in, so an administrator can match an invite to a person.
+    rows = await session.execute(
+        select(InviteRedemption.invite_code_id, InviteRedemption.email).where(
+            InviteRedemption.invite_code_id.in_([invite.id for invite in invites] or [None])
+        )
+    )
+    by_invite: dict[Any, list[str]] = {}
+    for invite_id, email in rows.all():
+        by_invite.setdefault(invite_id, []).append(email or "—")
+
+    return DataResponse(
+        data=[
+            InviteService.to_dict(invite, redeemed_by=by_invite.get(invite.id, []))
+            for invite in invites
+        ]
+    )
+
+
+@router.post(
+    "/invites",
+    status_code=status.HTTP_201_CREATED,
+    response_model=DataResponse[dict],
+    summary="Issue an invite code",
+)
+async def create_invite(
+    payload: InviteCreate, admin: AdminUser, session: DbSession
+) -> DataResponse[dict]:
+    service = InviteService(session, actor_user_id=admin.id)
+    invite = await service.create(
+        note=payload.note, max_uses=payload.max_uses, expires_in_days=payload.expires_in_days
+    )
+    await AuditService(session).record(
+        AuditAction.ADMIN_ACTION,
+        actor_user_id=admin.id,
+        actor_email=admin.email,
+        entity_type="invite_code",
+        entity_id=invite.id,
+        summary=f"Issued invite for {payload.note or 'an unnamed recipient'}",
+    )
+    await session.commit()
+    return DataResponse(data=InviteService.to_dict(invite))
+
+
+@router.post(
+    "/invites/{invite_id}/revoke",
+    response_model=DataResponse[dict],
+    summary="Revoke an invite code",
+)
+async def revoke_invite(
+    invite_id: uuid.UUID, admin: AdminUser, session: DbSession
+) -> DataResponse[dict]:
+    service = InviteService(session, actor_user_id=admin.id)
+    invite = await service.revoke(invite_id)
+    await AuditService(session).record(
+        AuditAction.ADMIN_ACTION,
+        actor_user_id=admin.id,
+        actor_email=admin.email,
+        entity_type="invite_code",
+        entity_id=invite.id,
+        summary="Revoked an invite",
+    )
+    await session.commit()
+    return DataResponse(data=InviteService.to_dict(invite))
 
 
 __all__ = ["router"]

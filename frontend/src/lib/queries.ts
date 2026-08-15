@@ -52,6 +52,7 @@ export const queryKeys = {
   adminUsers: (params?: QueryParams) => ["admin", "users", params ?? {}] as const,
   adminOrganizations: (params?: QueryParams) => ["admin", "organizations", params ?? {}] as const,
   adminJobs: (params?: QueryParams) => ["admin", "jobs", params ?? {}] as const,
+  adminInvites: ["admin", "invites"] as const,
   adminAuditLogs: (params?: QueryParams) => ["admin", "audit-logs", params ?? {}] as const,
   activeSessions: ["auth", "sessions"] as const,
   storageUsage: ["files", "usage"] as const,

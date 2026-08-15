@@ -57,6 +57,17 @@ def _reset_caches() -> AsyncIterator[None]:
 
 
 @pytest.fixture
+def invite_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the test against a closed signup.
+
+    Set through the environment and the settings cache cleared, so the application reads it the
+    same way a deployment would rather than through a patched attribute.
+    """
+    monkeypatch.setenv("SIGNUP_MODE", "invite")
+    reset_settings_cache()
+
+
+@pytest.fixture
 async def engine(tmp_path: Path):  # type: ignore[no-untyped-def]
     url = f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"
     os.environ["DATABASE_URL"] = url
@@ -277,3 +288,27 @@ __all__ = [
     "signup",
     "upgrade_to_pro",
 ]
+
+
+async def promote_to_admin(db, email: str) -> None:  # type: ignore[no-untyped-def]
+    """Give an account the platform staff role.
+
+    Written directly, for the same reason `upgrade_to_pro` is: no tenant API grants this, and that
+    it cannot is what the admin tests assert.
+    """
+    from sqlalchemy import select
+
+    from tradeloom.core.enums import UserRole
+    from tradeloom.models.identity import User
+
+    result = await db.execute(select(User).where(User.email == email.lower()))
+    user = result.scalar_one()
+    user.role = UserRole.ADMIN
+    await db.commit()
+
+
+@pytest.fixture
+async def staff(alice, db) -> ApiUser:  # type: ignore[no-untyped-def]
+    """Alice, holding the platform administrator role."""
+    await promote_to_admin(db, alice.email)
+    return alice

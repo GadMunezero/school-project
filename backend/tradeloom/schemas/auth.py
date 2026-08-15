@@ -65,6 +65,8 @@ class SignupRequest(TradeloomModel):
     organization_name: str | None = Field(default=None, max_length=120)
     timezone: str = "UTC"
     accepted_terms: bool = True
+    #: Required only when the deployment runs a closed signup (``SIGNUP_MODE=invite``).
+    invite_code: str | None = Field(default=None, max_length=40)
 
     @field_validator("password")
     @classmethod

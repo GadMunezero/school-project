@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit: int = Field(default=1680, alias="CELERY_TASK_SOFT_TIME_LIMIT")
     celery_task_always_eager: bool = Field(default=False, alias="CELERY_TASK_ALWAYS_EAGER")
 
+    # --- signup ------------------------------------------------------------
+    #: ``open`` lets anyone register; ``invite`` requires a code an administrator issued.
+    #:
+    #: The default is ``open`` because that is what the code has always done, and flipping it
+    #: silently would lock people out of running deployments. ``.env.example`` ships ``invite``,
+    #: so a fresh install starts closed — which is the right way round for a beta.
+    signup_mode: str = Field(default="open", alias="SIGNUP_MODE")
+
+    @property
+    def signup_is_invite_only(self) -> bool:
+        return self.signup_mode.strip().lower() == "invite"
+
     # --- rate limiting -----------------------------------------------------
     rate_limit_enabled: bool = Field(default=True, alias="RATE_LIMIT_ENABLED")
     rate_limit_default: str = Field(default="200/minute", alias="RATE_LIMIT_DEFAULT")

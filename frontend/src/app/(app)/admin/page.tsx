@@ -5,10 +5,11 @@ import { useState } from "react";
 import { ShieldAlert } from "lucide-react";
 
 import { api } from "@/lib/api";
-import { formatDateTime, formatInteger, formatRelative, humanise } from "@/lib/format";
+import { formatDate, formatDateTime, formatInteger, formatRelative, humanise } from "@/lib/format";
 import { queryKeys } from "@/lib/queries";
 import { useSession } from "@/lib/session";
 import type {
+  AdminInvite,
   AdminJobRow,
   AdminOrganizationRow,
   AdminOverview,
@@ -57,6 +58,7 @@ export default function AdminPage() {
           { id: "overview", label: "Overview" },
           { id: "users", label: "Users" },
           { id: "workspaces", label: "Workspaces" },
+          { id: "invites", label: "Invites" },
           { id: "jobs", label: "Jobs" },
           { id: "audit", label: "Audit log" },
         ]}
@@ -66,6 +68,7 @@ export default function AdminPage() {
         {tab === "overview" ? <OverviewTab /> : null}
         {tab === "users" ? <UsersTab /> : null}
         {tab === "workspaces" ? <WorkspacesTab /> : null}
+        {tab === "invites" ? <InvitesTab /> : null}
         {tab === "jobs" ? <JobsTab /> : null}
         {tab === "audit" ? <AuditTab /> : null}
       </div>
@@ -425,6 +428,176 @@ function PlanModal({
 }
 
 const JOB_STATUSES = ["", "queued", "running", "completed", "failed", "cancelled"];
+
+const INVITE_TONE: Record<string, "profit" | "neutral" | "warn" | "loss"> = {
+  active: "profit",
+  used: "neutral",
+  expired: "warn",
+  revoked: "loss",
+};
+
+/**
+ * Issue and revoke the codes that admit people to a closed signup.
+ *
+ * The code is shown in full because an administrator has to send it to someone. It grants nothing
+ * beyond the right to register, and it stops working the moment it is spent, expired or revoked.
+ */
+function InvitesTab() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [note, setNote] = useState("");
+  const [maxUses, setMaxUses] = useState("1");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const invites = useQuery({
+    queryKey: queryKeys.adminInvites,
+    queryFn: () => api.get<AdminInvite[]>("/api/v1/admin/invites"),
+  });
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.post<AdminInvite>("/api/v1/admin/invites", {
+        note: note.trim() || undefined,
+        max_uses: Number(maxUses) || 1,
+      }),
+    onSuccess: (invite) => {
+      setNote("");
+      setMaxUses("1");
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminInvites });
+      toast.success("Invite issued", `Send ${invite.code} to ${invite.note ?? "your tester"}.`);
+    },
+    onError: (error) => toast.fromError(error, "Could not issue an invite"),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.post<AdminInvite>(`/api/v1/admin/invites/${id}/revoke`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.adminInvites });
+      toast.success("Invite revoked", "It will no longer admit anyone.");
+    },
+    onError: (error) => toast.fromError(error, "Could not revoke that invite"),
+  });
+
+  async function copy(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(code);
+      window.setTimeout(() => setCopied(null), 2000);
+    } catch {
+      // Clipboard access can be refused; the code is on screen either way.
+      toast.info("Copy it manually", code);
+    }
+  }
+
+  const rows = invites.data ?? [];
+
+  return (
+    <>
+      <Card className="mb-4">
+        <CardHeader
+          title="Issue an invite"
+          description="Single-use by default, and it expires in 30 days. Raise the uses for a cohort."
+        />
+        <div className="grid gap-3 sm:grid-cols-[1fr_140px_auto] sm:items-end">
+          <Field label="Who is it for?" htmlFor="i-note">
+            <Input
+              id="i-note"
+              value={note}
+              placeholder="Jamie, from the futures forum"
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </Field>
+          <Field label="Uses" htmlFor="i-uses">
+            <Input
+              id="i-uses"
+              inputMode="numeric"
+              value={maxUses}
+              onChange={(event) => setMaxUses(event.target.value)}
+            />
+          </Field>
+          <Button variant="primary" loading={create.isPending} onClick={() => create.mutate()}>
+            Issue invite
+          </Button>
+        </div>
+      </Card>
+
+      {invites.isError ? (
+        <ErrorState error={invites.error} onRetry={() => void invites.refetch()} />
+      ) : invites.isLoading ? (
+        <Skeleton className="h-40 rounded" />
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No invites yet"
+          description="Issue one above, then send the code to your first tester."
+        />
+      ) : (
+        <Card padded={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-2xs uppercase tracking-wide text-faint">
+                <tr className="border-b border-line">
+                  <th className="px-4 py-2 text-left font-semibold">Code</th>
+                  <th className="px-4 py-2 text-left font-semibold">For</th>
+                  <th className="px-4 py-2 text-right font-semibold">Uses</th>
+                  <th className="px-4 py-2 text-left font-semibold">Redeemed by</th>
+                  <th className="px-4 py-2 text-left font-semibold">Expires</th>
+                  <th className="px-4 py-2 text-left font-semibold">State</th>
+                  <th className="px-4 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {rows.map((invite) => (
+                  <tr key={invite.id}>
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => void copy(invite.code)}
+                        className="tnum rounded font-medium tracking-wider text-ink underline decoration-dotted underline-offset-4 hover:text-accent"
+                        title="Copy to clipboard"
+                      >
+                        {invite.code}
+                      </button>
+                      {copied === invite.code ? (
+                        <span className="ml-2 text-2xs text-profit">Copied</span>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2 text-muted">{invite.note ?? "—"}</td>
+                    <td className="tnum px-4 py-2 text-right text-ink">
+                      {invite.used_count} / {invite.max_uses}
+                    </td>
+                    <td className="px-4 py-2 text-muted">
+                      {invite.redeemed_by.length > 0 ? invite.redeemed_by.join(", ") : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-muted">
+                      {invite.expires_at ? formatDate(invite.expires_at) : "never"}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge tone={INVITE_TONE[invite.state] ?? "neutral"}>
+                        {humanise(invite.state)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {invite.state === "active" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          loading={revoke.isPending && revoke.variables === invite.id}
+                          onClick={() => revoke.mutate(invite.id)}
+                        >
+                          Revoke
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </>
+  );
+}
 
 function JobsTab() {
   const [status, setStatus] = useState("");

@@ -8,6 +8,7 @@ Used by the Docker entrypoints and by developers::
     python -m tradeloom.cli reset --force        # development only
     python -m tradeloom.cli create-admin --email you@example.com
     python -m tradeloom.cli run-jobs             # execute queued backtests without a worker
+    python -m tradeloom.cli invite --note "Jamie"
 """
 
 from __future__ import annotations
@@ -216,6 +217,37 @@ async def _run_jobs(limit: int) -> int:
     return 0
 
 
+async def _invite(note: str | None, max_uses: int, expires_in_days: int | None) -> int:
+    """Mint an invite code without going through the admin UI.
+
+    Useful for the first few testers, and for scripting a cohort. The code is printed once here
+    and is also listed under Administration -> Invites.
+    """
+    from tradeloom.db.session import dispose_engine, session_scope
+    from tradeloom.services.invites import InviteService
+
+    settings = get_settings()
+    async with session_scope() as session:
+        invite = await InviteService(session).create(
+            note=note, max_uses=max_uses, expires_in_days=expires_in_days
+        )
+        await session.commit()
+        code, expires_at = invite.code, invite.expires_at
+
+    await dispose_engine()
+    print(f"invite code : {code}")
+    print(f"  for       : {note or '(unassigned)'}")
+    print(f"  uses      : {max_uses}")
+    print(f"  expires   : {expires_at.isoformat() if expires_at else 'never'}")
+    if not settings.signup_is_invite_only:
+        print(
+            "\nnote: SIGNUP_MODE is not 'invite', so registration is currently open to anyone "
+            "and this code is not required.",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="tradeloom", description="Tradeloom operations")
     parser.add_argument("--version", action="version", version=f"tradeloom {__version__}")
@@ -238,6 +270,11 @@ def build_parser() -> argparse.ArgumentParser:
     admin.add_argument("--email", required=True)
     admin.add_argument("--password", default=None, help="Prompted for if omitted")
 
+    invite = subparsers.add_parser("invite", help="Issue an invite code for a closed signup")
+    invite.add_argument("--note", default=None, help="Who the invite is for")
+    invite.add_argument("--uses", type=int, default=1)
+    invite.add_argument("--days", type=int, default=30, help="0 for an invite that never expires")
+
     jobs = subparsers.add_parser(
         "run-jobs", help="Execute queued backtest runs here, without a Celery worker"
     )
@@ -257,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         "reset": lambda: _reset(args.force),
         "create-admin": lambda: _create_admin(args.email, args.password),
         "run-jobs": lambda: _run_jobs(args.limit),
+        "invite": lambda: _invite(args.note, args.uses, args.days or None),
     }
     return asyncio.run(handlers[args.command]())
 

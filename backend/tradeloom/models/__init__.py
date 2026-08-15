@@ -31,6 +31,8 @@ from tradeloom.models.organization import (
 from tradeloom.models.platform import (
     AnalyticsSnapshot,
     AuditLog,
+    InviteCode,
+    InviteRedemption,
     JobRecord,
     Notification,
     Subscription,
@@ -59,6 +61,8 @@ __all__ = [
     "ImportTemplate",
     "Instrument",
     "InstrumentAlias",
+    "InviteCode",
+    "InviteRedemption",
     "JobRecord",
     "JournalEntry",
     "LoginAttempt",

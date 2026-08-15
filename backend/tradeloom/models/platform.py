@@ -255,9 +255,58 @@ class AuditLog(Base, UUIDPrimaryKeyMixin):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class InviteCode(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """A code that admits someone to a closed signup.
+
+    Not tenant-scoped: an invite exists before the account that redeems it, so there is no
+    workspace to scope it to. Only platform staff can mint one.
+
+    ``used_count`` is incremented under a conditional UPDATE rather than read-then-write, so two
+    people redeeming the last use of a code at the same moment cannot both get in. The code itself
+    is stored as issued: it is a short-lived admission ticket, not a credential, and an
+    administrator has to be able to read it back to send it to someone.
+    """
+
+    __tablename__ = "invite_codes"
+    __table_args__ = (UniqueConstraint("code", name="uq_invite_codes_code"),)
+
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: Who the code was minted for, so an admin can tell two outstanding invites apart.
+    note: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(TZDateTime(), nullable=True)
+
+
+class InviteRedemption(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Who used which invite. Kept so an admin can see who a code let in."""
+
+    __tablename__ = "invite_redemptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_invite_redemptions_user"),
+        Index("ix_invite_redemptions_invite", "invite_code_id"),
+    )
+
+    invite_code_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), ForeignKey("invite_codes.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    #: Retained after erasure so the invite's history does not develop holes.
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+
+
 __all__ = [
     "AnalyticsSnapshot",
     "AuditLog",
+    "InviteCode",
+    "InviteRedemption",
     "JobRecord",
     "Notification",
     "Subscription",

@@ -587,6 +587,21 @@ export interface CoverageRow {
 }
 
 /** What the importer found in an uploaded file, before any of it is stored. */
+export interface AdminInvite {
+  id: UUID;
+  code: string;
+  note: string | null;
+  max_uses: number;
+  used_count: number;
+  uses_left: number;
+  /** active | used | expired | revoked — revoked outranks the rest. */
+  state: "active" | "used" | "expired" | "revoked";
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  redeemed_by: string[];
+}
+
 export interface CandleInspection {
   headers: string[];
   delimiter: string;
