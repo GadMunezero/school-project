@@ -49,7 +49,11 @@ export TRADELOOM_ENV=development
 export EMAIL_ENABLED=false
 export STRIPE_ENABLED=false
 export RATE_LIMIT_ENABLED=false
-export CORS_ORIGINS="$WEB_URL"
+# Both spellings of the loopback host. CORS matches the Origin header as an exact string, so a
+# browser pointed at 127.0.0.1 while this listed only localhost got no allow-origin header back,
+# the fetch rejected, and the sign-in form reported "could not reach the server" — which reads as
+# a wrong password rather than the configuration problem it is.
+export CORS_ORIGINS="${WEB_URL},http://127.0.0.1:${WEB_PORT}"
 export BACKEND_URL="$API_URL" FRONTEND_URL="$WEB_URL"
 export PYTHONPATH="$ROOT:$ROOT/backend"
 

@@ -25,8 +25,12 @@ ADMIN_URL=${RESTORE_ADMIN_URL:-postgresql://localhost/postgres}
 SCRATCH_DB="tradeloom_restore_check_$$"
 SCRATCH_URL="${ADMIN_URL%/*}/$SCRATCH_DB"
 
-PY=${PYTHON:-.venv/bin/python}
-[ -x "$PY" ] || PY=python3
+# PYTHON may be a path (.venv/bin/python) or a bare name on PATH (python). Both have to work: the
+# first is how this runs on a developer's machine, the second is how it runs in CI.
+PY=${PYTHON:-}
+if [ -z "$PY" ]; then
+  if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=python3; fi
+fi
 
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 fail() { printf '\033[31m✗ %s\033[0m\n' "$1" >&2; exit 1; }
@@ -46,10 +50,17 @@ pg_restore --no-owner --no-privileges --exit-on-error --dbname="$SCRATCH_URL" "$
   || fail "the dump did not restore cleanly"
 
 step "check the schema matches the application's models"
+# Run alembic as a module rather than reaching for a sibling executable next to the interpreter:
+# that guess produced "python3/alembic" whenever PYTHON was a bare name, and the failure was
+# reported as a stale schema — a wrong answer is worse than no answer here.
+command -v "$PY" >/dev/null 2>&1 || fail "no Python interpreter at '$PY' — set PYTHON"
+"$PY" -c "import alembic" 2>/dev/null \
+  || fail "alembic is not installed for '$PY' — set PYTHON to the interpreter with the backend installed"
+
 DATABASE_URL="postgresql+asyncpg://${SCRATCH_URL#postgresql://}" \
 SECRET_KEY=restore-check-only-not-a-real-secret-key-0123456789 \
 PYTHONPATH="$ROOT:$ROOT/backend" \
-  "${PY%/*}/alembic" -c backend/alembic.ini check \
+  "$PY" -m alembic -c backend/alembic.ini check \
   || fail "the restored schema does not match the models — the dump predates a migration"
 
 step "count what came back"
